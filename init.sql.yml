@@ -1,0 +1,40 @@
+-- Enable PostGIS extension
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- Sample tables
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pets (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    owner_id INT NOT NULL REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS locations (
+    id SERIAL PRIMARY KEY,
+    pet_id INT NOT NULL REFERENCES pets(id),
+    position GEOGRAPHY(Point, 4326) NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS geofences (
+    id SERIAL PRIMARY KEY,
+    pet_id INT NOT NULL REFERENCES pets(id),
+    area GEOGRAPHY(Polygon, 4326) NOT NULL
+);
+
+-- Sample data
+INSERT INTO users (username, password, role) VALUES
+('admin', 'admin123', 'ADMIN'),
+('john_doe', 'password123', 'OWNER');
+
+INSERT INTO pets (name, owner_id) VALUES
+('Fluffy', 2);
+
+INSERT INTO locations (pet_id, position) VALUES
+(1, ST_GeogFromText('SRID=4326;POINT(-73.935242 40.730610)')); -- NYC

@@ -1,0 +1,16 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: pettracker-mysql
+    environment:
+      MYSQL_DATABASE: pettracker
+      MYSQL_USER: petuser
+      MYSQL_PASSWORD: petpass
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
