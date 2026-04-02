@@ -17,16 +17,40 @@ repositories {
 }
 
 dependencies {
+    // Spring Boot Core
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    runtimeOnly 'com.mysql:mysql-connector-j'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
+    // JWT
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    implementation 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    implementation 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // PostgreSQL + PostGIS
+    implementation 'org.postgresql:postgresql'
+    implementation 'org.hibernate.orm:hibernate-spatial:6.4.4.Final'
+    implementation 'org.locationtech.jts:jts-core:1.19.0'
+
+    // Twilio (latest stable for SMS/Calls)
+    implementation 'com.twilio.sdk:twilio:10.9.2'
+
+    // Utils
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+    implementation 'io.netty:netty-all:4.1.112.Final'
+
+    // Spring for Kafka
+    implementation 'org.springframework.kafka:spring-kafka'
+
+    // JSON (if you need explicit)
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.security:spring-security-test'
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
 }
 
 tasks.named('test') {

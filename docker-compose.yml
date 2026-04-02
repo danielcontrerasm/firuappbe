@@ -1,16 +1,42 @@
+version: '3.9'
+
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: pettracker-mysql
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: pettracker-postgres
     environment:
-      MYSQL_DATABASE: pettracker
-      MYSQL_USER: petuser
-      MYSQL_PASSWORD: petpass
-      MYSQL_ROOT_PASSWORD: rootpass
+      POSTGRES_USER: petuser
+      POSTGRES_PASSWORD: petpass
+      POSTGRES_DB: pettracker
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:7.2
+    container_name: pettracker-redis
+    ports:
+      - "6379:6379"
+#
+#  app:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: pettracker-app
+#    environment:
+#      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pettracker
+#      SPRING_DATASOURCE_USERNAME: petuser
+#      SPRING_DATASOURCE_PASSWORD: petpass
+#      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+#      SPRING_DATA_REDIS_HOST: redis
+#      SPRING_DATA_REDIS_PORT: 6379
+#    ports:
+#      - "8080:8080"
+#    depends_on:
+#      - postgres
+#      - redis
 
 volumes:
-  mysql_data:
+  postgres_data:
