@@ -5,6 +5,7 @@ import com.example.pettracker.dto.AuthDTOs.RegisterRequest;
 import com.example.pettracker.dto.AuthDTOs.TokenResponse;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.security.JwtProvider;
+import com.example.pettracker.service.LoginDemoDataService;
 import com.example.pettracker.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,11 +22,17 @@ public class AuthController {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final LoginDemoDataService loginDemoDataService;
 
-    public AuthController(UserService userService, PasswordEncoder passwordEncoder, JwtProvider jwtProvider) {
+    public AuthController(
+            UserService userService,
+            PasswordEncoder passwordEncoder,
+            JwtProvider jwtProvider,
+            LoginDemoDataService loginDemoDataService) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
+        this.loginDemoDataService = loginDemoDataService;
     }
 
     @PostMapping("/register")
@@ -55,6 +62,8 @@ public class AuthController {
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid credentials");
         }
+
+        loginDemoDataService.seedForLogin(user);
 
         return new TokenResponse(jwtProvider.generateToken(user.getEmail()));
     }
