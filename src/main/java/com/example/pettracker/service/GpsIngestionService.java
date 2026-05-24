@@ -23,9 +23,11 @@ import java.util.concurrent.TimeUnit;
 public class GpsIngestionService {
 
     private final LocationRepository locationRepository;
+    private final GeofencingService geofencingService;
     
-    public GpsIngestionService(LocationRepository locationRepository) {
+    public GpsIngestionService(LocationRepository locationRepository, GeofencingService geofencingService) {
         this.locationRepository = locationRepository;
+        this.geofencingService = geofencingService;
     }
     private final ExecutorService gpsExecutor = new ThreadPoolExecutor(
         4, 8, 30, TimeUnit.SECONDS,
@@ -35,17 +37,14 @@ public class GpsIngestionService {
 
     public Location processGpsUpdate(Location l) {
         gpsExecutor.submit(() -> {
-            // parse, validate, save location
-            saveToDatabase(l);
-           /* // trigger async alert if needed
-            if (isOutOfZone(data)) {
-                sendAlertAsync(data);
-            }*/
+            Location savedLocation = saveToDatabase(l);
+            geofencingService.checkAndAlert(savedLocation);
+            geofencingService.checkGeofence(savedLocation);
         });
         return l;
     }
 
-    private  Location saveToDatabase(Location l) {
+    private Location saveToDatabase(Location l) {
         return locationRepository.save(l);
     }
 }

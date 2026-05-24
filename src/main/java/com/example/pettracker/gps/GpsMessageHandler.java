@@ -3,9 +3,8 @@ package com.example.pettracker.gps;
 
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
-import com.example.pettracker.gps.GpsKafkaProducer;
-import com.example.pettracker.repository.LocationRepository;
 import com.example.pettracker.repository.PetRepository;
+import com.example.pettracker.service.LocationService;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +21,7 @@ import java.util.Optional;
 public class GpsMessageHandler extends SimpleChannelInboundHandler<String> {
 
     //private final GpsKafkaProducer producer;
-    private final LocationRepository locationRepository;
+    private final LocationService locationService;
     private final PetRepository petRepository;
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, String msg) {
@@ -55,7 +54,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<String> {
                     //.position(p)
                     .build();
 
-            locationRepository.save(loc);
+            locationService.save(loc);
             log.info("Persisted location for pet id={} imei={} @ {},{}", pet.getId(), imei, lat, lon);
             //producer.sendLocation(imei, lat, lon, ts);
             log.debug("Accepted GPS line -> {}", line);

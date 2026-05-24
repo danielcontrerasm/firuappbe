@@ -27,7 +27,6 @@ public class VolunteerService {
     private final VolunteerRepository volunteerRepository;
     private final SearchGroupRepository searchGroupRepository;
     private final UserRepository userRepository;
-    private final VolunteerNotificationService volunteerNotificationService;
     private final NotificationService notificationService;
 
     /**

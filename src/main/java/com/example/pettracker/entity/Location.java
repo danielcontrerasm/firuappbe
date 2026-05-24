@@ -2,7 +2,6 @@ package com.example.pettracker.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.locationtech.jts.geom.Point;
 import java.time.Instant;
 import java.time.LocalDateTime;
 

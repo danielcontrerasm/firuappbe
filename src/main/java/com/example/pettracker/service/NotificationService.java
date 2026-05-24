@@ -2,6 +2,7 @@ package com.example.pettracker.service;
 
 
 import com.example.pettracker.entity.User;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -29,8 +30,9 @@ public class NotificationService {
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public NotificationService(JavaMailSender mailSender, SimpMessagingTemplate messagingTemplate) {
-        this.mailSender = mailSender;
+    public NotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
+                               SimpMessagingTemplate messagingTemplate) {
+        this.mailSender = mailSenderProvider.getIfAvailable();
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -50,6 +52,7 @@ public class NotificationService {
 
     public void sendEmail(String to, String subject, String body) {
         try {
+            if (mailSender == null) return;
             SimpleMailMessage m = new SimpleMailMessage();
             m.setTo(to);
             m.setSubject(subject);

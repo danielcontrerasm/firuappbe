@@ -1,12 +1,13 @@
 package com.example.pettracker.controller;
 
 import com.example.pettracker.dto.GeofenceRequests.*;
+import com.example.pettracker.dto.GeofenceResponseDto;
 import com.example.pettracker.entity.Geofence;
 import com.example.pettracker.entity.Pet;
+import com.example.pettracker.mapper.GeofenceMapper;
 import com.example.pettracker.repository.PetRepository;
 import com.example.pettracker.repository.GeofenceRepository;
 import org.locationtech.jts.geom.*;
-import org.locationtech.jts.io.WKTReader;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,7 +26,7 @@ public class GeofenceController {
     }
 
     @PostMapping("/circle/{petId}")
-    public ResponseEntity<Geofence> createCircle(@PathVariable Long petId, @RequestBody CircleRequest req) {
+    public ResponseEntity<GeofenceResponseDto> createCircle(@PathVariable Long petId, @RequestBody CircleRequest req) {
         Pet pet = petRepository.findById(petId).orElseThrow();
         Geofence g = Geofence.builder()
                 .pet(pet)
@@ -34,11 +35,11 @@ public class GeofenceController {
                 .centerLng(req.getCenterLng())
                 .radiusMeters(req.getRadiusMeters())
                 .build();
-        return ResponseEntity.ok(geofenceRepository.save(g));
+        return ResponseEntity.ok(GeofenceMapper.toDto(geofenceRepository.save(g)));
     }
 
     @PostMapping("/polygon/{petId}")
-    public ResponseEntity<Geofence> createPolygon(@PathVariable Long petId, @RequestBody PolygonRequest req) {
+    public ResponseEntity<GeofenceResponseDto> createPolygon(@PathVariable Long petId, @RequestBody PolygonRequest req) {
         Pet pet = petRepository.findById(petId).orElseThrow();
         // coordinates are list of "lat,lng" strings
         List<List<Double>> coords = req.getCoordinates();
@@ -59,12 +60,15 @@ public class GeofenceController {
                 .build();
 
 
-        return ResponseEntity.ok(geofenceRepository.save(g));
+        return ResponseEntity.ok(GeofenceMapper.toDto(geofenceRepository.save(g)));
     }
 
     @GetMapping("/{petId}")
-    public ResponseEntity<Geofence> getByPet(@PathVariable Long petId) {
-        return geofenceRepository.findByPetId(petId).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<GeofenceResponseDto> getByPet(@PathVariable Long petId) {
+        return geofenceRepository.findByPetId(petId)
+                .map(GeofenceMapper::toDto)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{petId}")
