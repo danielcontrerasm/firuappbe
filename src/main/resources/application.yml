@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: pettracker
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pettracker}
+    username: ${SPRING_DATASOURCE_USERNAME:petuser}
+    password: ${SPRING_DATASOURCE_PASSWORD:petpass}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    properties:
+      hibernate:
+        format_sql: true
+
+jwt:
+  # Override JWT_SECRET outside local development. HS512 needs a sufficiently long secret.
+  secret: ${JWT_SECRET:pettracker-local-development-secret-change-this-before-production-0123456789}
+  expiration: ${JWT_EXPIRATION_MS:86400000}
