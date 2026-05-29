@@ -1,9 +1,10 @@
 package com.example.pettracker.controller;
 
+import com.example.pettracker.dto.SearchGroupDto;
+import com.example.pettracker.dto.VolunteerDto;
 import com.example.pettracker.entity.Pet;
-import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
-import com.example.pettracker.entity.Volunteer;
+import com.example.pettracker.mapper.SearchGroupMapper;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
@@ -15,7 +16,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,9 +41,16 @@ public class SearchGroupController {
     }
 
     @PostMapping
-    public ResponseEntity<SearchGroup> create(
+    public ResponseEntity<SearchGroupDto> create(
             @RequestParam Long petId,
             @RequestParam(required = false) String groupName,
+            @RequestParam(required = false) String description,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String area,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String leaderName,
+            @RequestParam(required = false) String leaderPhone,
+            @RequestParam(required = false) Double coverageRadiusKm,
             Authentication authentication) {
         User user = currentUser(authentication);
         Pet pet = petService.findById(petId);
@@ -55,19 +62,31 @@ public class SearchGroupController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(volunteerService.createSearchGroupForLostPet(pet, user, groupName));
+                .body(SearchGroupMapper.toDto(volunteerService.createSearchGroupForLostPet(
+                        pet,
+                        user,
+                        groupName,
+                        description,
+                        status,
+                        area,
+                        city,
+                        leaderName,
+                        leaderPhone,
+                        coverageRadiusKm)));
     }
 
     @GetMapping("/pet/{petId}")
-    public List<SearchGroup> listForPet(@PathVariable Long petId) {
-        return searchGroupRepository.findByPetId(petId);
+    public List<SearchGroupDto> listForPet(@PathVariable Long petId) {
+        return searchGroupRepository.findByPetId(petId).stream()
+                .map(SearchGroupMapper::toDto)
+                .toList();
     }
 
     @PostMapping("/{searchGroupId}/join")
-    public ResponseEntity<Volunteer> join(@PathVariable Long searchGroupId, Authentication authentication) {
+    public ResponseEntity<VolunteerDto> join(@PathVariable Long searchGroupId, Authentication authentication) {
         User user = currentUser(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(volunteerService.joinSearchGroup(user.getId(), searchGroupId));
+                .body(SearchGroupMapper.toDto(volunteerService.joinSearchGroup(user.getId(), searchGroupId)));
     }
 
     @PostMapping("/{searchGroupId}/leave")
@@ -78,14 +97,18 @@ public class SearchGroupController {
     }
 
     @GetMapping("/{searchGroupId}/volunteers")
-    public List<Volunteer> volunteers(@PathVariable Long searchGroupId) {
-        return volunteerService.getActiveVolunteersForGroup(searchGroupId);
+    public List<VolunteerDto> volunteers(@PathVariable Long searchGroupId) {
+        return volunteerService.getActiveVolunteersForGroup(searchGroupId).stream()
+                .map(SearchGroupMapper::toDto)
+                .toList();
     }
 
     @GetMapping("/my")
-    public List<SearchGroup> myGroups(Authentication authentication) {
+    public List<SearchGroupDto> myGroups(Authentication authentication) {
         User user = currentUser(authentication);
-        return volunteerService.getUserSearchGroups(user.getId());
+        return volunteerService.getUserSearchGroups(user.getId()).stream()
+                .map(SearchGroupMapper::toDto)
+                .toList();
     }
 
     private User currentUser(Authentication authentication) {

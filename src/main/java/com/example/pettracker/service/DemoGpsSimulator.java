@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Envelope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -97,6 +96,11 @@ public class DemoGpsSimulator {
                     : geofence.getRadiusMeters();
             double latOffset = (radiusMeters * OUTSIDE_DISTANCE_MULTIPLIER) / METERS_PER_DEGREE_LATITUDE;
             return new Point(geofence.getCenterLat() + latOffset, geofence.getCenterLng());
+        }
+
+        if (geofence.getPolygon() == null) {
+            return new Point(bellaRoute().getFirst().latitude() + OUTSIDE_POLYGON_OFFSET_DEGREES,
+                    bellaRoute().getFirst().longitude() + OUTSIDE_POLYGON_OFFSET_DEGREES);
         }
 
         Envelope envelope = geofence.getPolygon().getEnvelopeInternal();

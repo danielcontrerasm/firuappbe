@@ -21,15 +21,33 @@ public class SearchGroup {
 
     private String groupName;
 
+    @Column(length = 1000)
+    private String description;
+
+    @Builder.Default
+    private String status = "active";
+
+    private String area;
+
+    private String city;
+
+    private String leaderName;
+
+    private String leaderPhone;
+
+    private Double coverageRadiusKm;
+
     @ManyToOne
     @JoinColumn(name = "created_by")
     private User createdBy;
 
+    @Builder.Default
     private Instant createdAt = Instant.now();
 
     @ManyToMany
     @JoinTable(name = "searchgroup_volunteers",
             joinColumns = @JoinColumn(name = "group_id"),
             inverseJoinColumns = @JoinColumn(name = "user_id"))
+    @Builder.Default
     private Set<User> volunteers = new HashSet<>();
 }

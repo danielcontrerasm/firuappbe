@@ -12,5 +12,6 @@ public interface LocationMapper {
     LocationMapper INSTANCE = Mappers.getMapper(LocationMapper.class);
 
     @Mapping(source = "pet.name", target = "petName")
+    @Mapping(source = "pet.id", target = "petId")
     LocationDTO toDto(Location location);
 }

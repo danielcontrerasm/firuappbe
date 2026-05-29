@@ -29,20 +29,31 @@ public class LoginDemoDataService {
             return;
         }
 
-        Pet peluche = findOrCreatePet(user, "Peluche", "Dog", "DEMO-PELUCHE-" + user.getId());
-        Pet bella = findOrCreatePet(user, "Bella", "Dog", "DEMO-BELLA-" + user.getId());
-        Pet rocky = findOrCreatePet(user, "Rocky", "Dog", "DEMO-ROCKY-" + user.getId());
+        Pet peluche = findOrCreatePet(user, "Peluche", "Dog", "Poodle", 4, 6.8, "DEMO-PELUCHE-" + user.getId());
+        Pet bella = findOrCreatePet(user, "Bella", "Dog", "Labrador", 3, 24.5, "DEMO-BELLA-" + user.getId());
+        Pet rocky = findOrCreatePet(user, "Rocky", "Dog", "Beagle", 5, 11.2, "DEMO-ROCKY-" + user.getId());
 
         insertRoute(peluche, pobladoRoute(), 9);
         insertRoute(bella, bellaRoute(), 18);
         insertRoute(rocky, rockyRoute(), 18);
     }
 
-    private Pet findOrCreatePet(User owner, String name, String type, String imei) {
+    private Pet findOrCreatePet(User owner, String name, String type, String race, Integer age, Double weight, String imei) {
         return petRepository.findByOwnerIdAndNameIgnoreCase(owner.getId(), name)
+                .map(existing -> {
+                    existing.setType(type);
+                    existing.setRace(race);
+                    existing.setAge(age);
+                    existing.setWeight(weight);
+                    existing.setImei(imei);
+                    return petRepository.save(existing);
+                })
                 .orElseGet(() -> petRepository.save(Pet.builder()
                         .name(name)
                         .type(type)
+                        .race(race)
+                        .age(age)
+                        .weight(weight)
                         .imei(imei)
                         .owner(owner)
                         .status(Pet.Status.ACTIVE)

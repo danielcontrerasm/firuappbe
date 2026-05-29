@@ -97,11 +97,28 @@ public class VolunteerService {
     /**
      * Creates a new search group for a lost pet and notifies nearby volunteers
      */
-    public SearchGroup createSearchGroupForLostPet(Pet lostPet, User petOwner, String groupName) {
+    public SearchGroup createSearchGroupForLostPet(
+            Pet lostPet,
+            User petOwner,
+            String groupName,
+            String description,
+            String status,
+            String area,
+            String city,
+            String leaderName,
+            String leaderPhone,
+            Double coverageRadiusKm) {
         SearchGroup searchGroup = SearchGroup.builder()
             .pet(lostPet)
             .createdBy(petOwner)
             .groupName(groupName != null ? groupName : "Search for " + lostPet.getName())
+            .description(description)
+            .status(status != null ? status : "active")
+            .area(area)
+            .city(city)
+            .leaderName(leaderName != null ? leaderName : petOwner.getName())
+            .leaderPhone(leaderPhone != null ? leaderPhone : petOwner.getPhone())
+            .coverageRadiusKm(coverageRadiusKm)
             .createdAt(Instant.now())
             .build();
 

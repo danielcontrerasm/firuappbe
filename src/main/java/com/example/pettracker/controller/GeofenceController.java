@@ -7,6 +7,8 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.mapper.GeofenceMapper;
 import com.example.pettracker.repository.PetRepository;
 import com.example.pettracker.repository.GeofenceRepository;
+import com.example.pettracker.repository.LocationRepository;
+import com.example.pettracker.service.GeofencingService;
 import org.locationtech.jts.geom.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,11 +20,19 @@ import java.util.List;
 public class GeofenceController {
     private final GeofenceRepository geofenceRepository;
     private final PetRepository petRepository;
+    private final LocationRepository locationRepository;
+    private final GeofencingService geofencingService;
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
-    public GeofenceController(GeofenceRepository geofenceRepository, PetRepository petRepository) {
+    public GeofenceController(
+            GeofenceRepository geofenceRepository,
+            PetRepository petRepository,
+            LocationRepository locationRepository,
+            GeofencingService geofencingService) {
         this.geofenceRepository = geofenceRepository;
         this.petRepository = petRepository;
+        this.locationRepository = locationRepository;
+        this.geofencingService = geofencingService;
     }
 
     @PostMapping("/circle/{petId}")
@@ -35,7 +45,9 @@ public class GeofenceController {
                 .centerLng(req.getCenterLng())
                 .radiusMeters(req.getRadiusMeters())
                 .build();
-        return ResponseEntity.ok(GeofenceMapper.toDto(geofenceRepository.save(g)));
+        Geofence saved = geofenceRepository.save(g);
+        checkLatestLocationForNewGeofence(petId);
+        return ResponseEntity.ok(GeofenceMapper.toDto(saved));
     }
 
     @PostMapping("/polygon/{petId}")
@@ -60,7 +72,9 @@ public class GeofenceController {
                 .build();
 
 
-        return ResponseEntity.ok(GeofenceMapper.toDto(geofenceRepository.save(g)));
+        Geofence saved = geofenceRepository.save(g);
+        checkLatestLocationForNewGeofence(petId);
+        return ResponseEntity.ok(GeofenceMapper.toDto(saved));
     }
 
     @GetMapping("/{petId}")
@@ -77,5 +91,14 @@ public class GeofenceController {
         if (opt.isEmpty()) return ResponseEntity.notFound().build();
         geofenceRepository.delete(opt.get());
         return ResponseEntity.noContent().build();
+    }
+
+    private void checkLatestLocationForNewGeofence(Long petId) {
+        locationRepository.findFirstByPetIdOrderByTimestampDesc(petId).stream()
+                .findFirst()
+                .ifPresent(location -> {
+                    geofencingService.checkAndAlert(location);
+                    geofencingService.checkGeofence(location);
+                });
     }
 }

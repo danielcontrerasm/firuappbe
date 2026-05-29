@@ -2,6 +2,7 @@ package com.example.pettracker.service;
 
 
 import com.example.pettracker.entity.User;
+import com.example.pettracker.repository.UserRepository;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -9,6 +10,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.twilio.Twilio;
 import com.twilio.rest.api.v2010.account.Message;
 import com.twilio.type.PhoneNumber;
@@ -29,11 +31,14 @@ public class NotificationService {
 
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
+    private final UserRepository userRepository;
 
     public NotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
-                               SimpMessagingTemplate messagingTemplate) {
+                               SimpMessagingTemplate messagingTemplate,
+                               UserRepository userRepository) {
         this.mailSender = mailSenderProvider.getIfAvailable();
         this.messagingTemplate = messagingTemplate;
+        this.userRepository = userRepository;
     }
 
     @PostConstruct
@@ -61,42 +66,49 @@ public class NotificationService {
         } catch (Exception e) { e.printStackTrace(); }
     }
     @Async("notificationExecutor")
+    @Transactional(readOnly = true)
     public void notifyOwner(User owner, String message) {
         if (owner == null) return;
-        if (owner.getPhone() != null && !owner.getPhone().isBlank()) sendSms(owner.getPhone(), message);
-        if (owner.getEmail() != null && !owner.getEmail().isBlank()) sendEmail(owner.getEmail(), "Pet Alert", message);
-        // Send a WebSocket message to owner-specific topic
-        try {
-            messagingTemplate.convertAndSend("/topic/alerts/" + owner.getId(), message);
-        } catch (Exception e) { e.printStackTrace(); }
+        Long ownerId = owner.getId();
+        if (ownerId == null) return;
+
+        User managedOwner = userRepository.findById(ownerId).orElse(null);
+        if (managedOwner == null) return;
+
+        notifyOwnerContacts(managedOwner, "Pet Alert", message, message, message);
     }
     @Async("notificationExecutor")
+    @Transactional(readOnly = true)
     public void notifyLostPet(User owner, String petName, String petType, String additionalInfo) {
         if (owner == null) return;
+        Long ownerId = owner.getId();
+        if (ownerId == null) return;
+
+        User managedOwner = userRepository.findById(ownerId).orElse(null);
+        if (managedOwner == null) return;
 
         // Create a comprehensive message for lost pet
         String message = buildLostPetMessage(petName, petType, additionalInfo);
 
-        // Send SMS to owner
-        if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
-            String smsBody = "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
-                    "Please take action immediately. Check your email for details.";
-            sendSms(owner.getPhone(), smsBody);
-        }
+        String smsBody = "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
+                "Please take action immediately. Check your email for details.";
 
-        // Send Email to owner
-        if (owner.getEmail() != null && !owner.getEmail().isBlank()) {
-            String emailSubject = "URGENT: Your Pet '" + petName + "' is Lost";
-            sendEmail(owner.getEmail(), emailSubject, message);
-        }
+        notifyOwnerContacts(
+                managedOwner,
+                "URGENT: Your Pet '" + petName + "' is Lost",
+                smsBody,
+                message,
+                "Your pet " + petName + " (" + petType + ") has been marked as lost!"
+        );
+    }
 
-        // Send WebSocket notification for real-time dashboard update
+    private void notifyOwnerContacts(User owner, String emailSubject, String smsBody, String emailBody, String websocketBody) {
+        if (owner.getPhone() != null && !owner.getPhone().isBlank()) sendSms(owner.getPhone(), smsBody);
+        if (owner.getEmail() != null && !owner.getEmail().isBlank()) sendEmail(owner.getEmail(), emailSubject, emailBody);
+        // Send a WebSocket message to owner-specific topic
         try {
-            messagingTemplate.convertAndSend("/topic/alerts/" + owner.getId(),
-                    "Your pet " + petName + " (" + petType + ") has been marked as lost!");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+            messagingTemplate.convertAndSend("/topic/alerts/" + owner.getId(), websocketBody);
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private String buildLostPetMessage(String petName, String petType, String additionalInfo) {

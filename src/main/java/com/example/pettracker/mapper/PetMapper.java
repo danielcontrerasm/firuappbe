@@ -15,12 +15,24 @@ public class PetMapper {
                 pet.getId(),
                 pet.getName(),
                 pet.getType(),
+                pet.getRace(),
+                pet.getAge(),
+                pet.getWeight(),
                 pet.getStatus() == null ? null : pet.getStatus().name(),
+                statusLabel(pet),
                 pet.getImei(),
                 pet.getCreatedAt(),
                 owner == null ? null : owner.getId(),
                 owner == null ? null : owner.getName(),
-                owner == null ? null : owner.getEmail()
+                owner == null ? null : owner.getEmail(),
+                pet.getImageContentType() == null ? null : "/api/pets/" + pet.getId() + "/image"
         );
+    }
+
+    private static String statusLabel(Pet pet) {
+        if (pet.getStatus() == null) {
+            return null;
+        }
+        return pet.getStatus() == Pet.Status.LOST ? "Lost" : "Live";
     }
 }

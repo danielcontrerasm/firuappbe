@@ -1,6 +1,14 @@
 spring:
   application:
     name: pettracker
+  sql:
+    init:
+      mode: ${SPRING_SQL_INIT_MODE:always}
+      continue-on-error: ${SPRING_SQL_INIT_CONTINUE_ON_ERROR:true}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pettracker}
     username: ${SPRING_DATASOURCE_USERNAME:petuser}
@@ -17,3 +25,11 @@ jwt:
   # Override JWT_SECRET outside local development. HS512 needs a sufficiently long secret.
   secret: ${JWT_SECRET:pettracker-local-development-secret-change-this-before-production-0123456789}
   expiration: ${JWT_EXPIRATION_MS:86400000}
+
+demo:
+  gps:
+    enabled: true
+    outside-interval-ms: 300000
+
+server:
+  port: ${PORT:8080}

@@ -20,7 +20,9 @@ public class Volunteer {
     @ManyToOne
     private SearchGroup searchGroup;
 
+    @Builder.Default
     private Instant joinedAt = Instant.now();
 
+    @Builder.Default
     private Boolean active = true;
 }

@@ -2,15 +2,20 @@ package com.example.pettracker.controller;
 
 import com.example.pettracker.dto.LocationDTO;
 import com.example.pettracker.dto.LocationRequest;
+import com.example.pettracker.dto.PetDto;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
+import com.example.pettracker.mapper.PetMapper;
 import com.example.pettracker.service.LocationService;
 import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,7 +25,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/pets")
@@ -42,13 +49,15 @@ public class PetController {
     }
 
     @GetMapping
-    public List<Pet> list(Authentication authentication) {
+    public List<PetDto> list(Authentication authentication) {
         User user = currentUser(authentication);
-        return petService.listForUser(user);
+        return petService.listForUser(user).stream()
+                .map(PetMapper::toDto)
+                .toList();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Pet> getById(@PathVariable Long id, Authentication authentication) {
+    public ResponseEntity<PetDto> getById(@PathVariable Long id, Authentication authentication) {
         User user = currentUser(authentication);
         Pet pet = petService.findById(id);
         if (pet == null) {
@@ -57,10 +66,10 @@ public class PetController {
         if (!canAccessPet(user, pet)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(pet);
+        return ResponseEntity.ok(PetMapper.toDto(pet));
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Pet> create(@RequestBody Pet pet, Authentication authentication) {
         User user = currentUser(authentication);
         if (pet.getOwner() == null || pet.getOwner().getId() == null || user.getRole() != User.Role.ADMIN) {
@@ -75,8 +84,30 @@ public class PetController {
         return ResponseEntity.status(HttpStatus.CREATED).body(petService.create(pet));
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<Pet> update(@PathVariable Long id, @RequestBody Pet request, Authentication authentication) {
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<PetDto> createWithImage(
+            @RequestPart("pet") PetDto request,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet pet = new Pet();
+        applyPetFields(pet, request);
+
+        if (user.getRole() == User.Role.ADMIN && request.ownerId() != null) {
+            User owner = userService.findById(request.ownerId());
+            if (owner == null) {
+                throw new RuntimeException("Owner not found");
+            }
+            pet.setOwner(owner);
+        } else {
+            pet.setOwner(user);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(PetMapper.toDto(petService.create(pet, image)));
+    }
+
+    @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<PetDto> update(@PathVariable Long id, @RequestBody PetDto request, Authentication authentication) {
         User user = currentUser(authentication);
         Pet existing = petService.findById(id);
         if (existing == null) {
@@ -86,22 +117,63 @@ public class PetController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        existing.setName(request.getName());
-        existing.setType(request.getType());
-        existing.setImei(request.getImei());
-        if (request.getStatus() != null) {
-            existing.setStatus(request.getStatus());
-        }
+        applyPetFields(existing, request);
 
-        if (user.getRole() == User.Role.ADMIN && request.getOwner() != null && request.getOwner().getId() != null) {
-            User owner = userService.findById(request.getOwner().getId());
+        if (user.getRole() == User.Role.ADMIN && request.ownerId() != null) {
+            User owner = userService.findById(request.ownerId());
             if (owner == null) {
                 throw new RuntimeException("Owner not found");
             }
             existing.setOwner(owner);
         }
 
-        return ResponseEntity.ok(petService.update(existing));
+        return ResponseEntity.ok(PetMapper.toDto(petService.update(existing)));
+    }
+
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<PetDto> updateWithImage(
+            @PathVariable Long id,
+            @RequestPart("pet") PetDto request,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet existing = petService.findById(id);
+        if (existing == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!canAccessPet(user, existing)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        applyPetFields(existing, request);
+
+        if (user.getRole() == User.Role.ADMIN && request.ownerId() != null) {
+            User owner = userService.findById(request.ownerId());
+            if (owner == null) {
+                throw new RuntimeException("Owner not found");
+            }
+            existing.setOwner(owner);
+        }
+
+        return ResponseEntity.ok(PetMapper.toDto(petService.update(existing, image)));
+    }
+
+    @GetMapping("/{id}/image")
+    public ResponseEntity<byte[]> getImage(@PathVariable Long id, Authentication authentication) {
+        User user = currentUser(authentication);
+        PetService.PetImage image = petService.findImageById(id);
+        if (image == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (user.getRole() != User.Role.ADMIN && !user.getId().equals(image.ownerId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.noCache())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + imageFileName(image) + "\"")
+                .body(image.data());
     }
 
     @DeleteMapping("/{id}")
@@ -205,5 +277,21 @@ public class PetController {
     private boolean canAccessPet(User user, Pet pet) {
         return user.getRole() == User.Role.ADMIN
                 || (pet.getOwner() != null && pet.getOwner().getId() != null && pet.getOwner().getId().equals(user.getId()));
+    }
+
+    private void applyPetFields(Pet pet, PetDto request) {
+        pet.setName(request.name());
+        pet.setType(request.type());
+        pet.setRace(request.race());
+        pet.setAge(request.age());
+        pet.setWeight(request.weight());
+        pet.setImei(request.imei());
+        if (request.status() != null) {
+            pet.setStatus(Pet.Status.valueOf(request.status().toUpperCase()));
+        }
+    }
+
+    private String imageFileName(PetService.PetImage image) {
+        return image.fileName() == null || image.fileName().isBlank() ? "pet-image" : image.fileName();
     }
 }
