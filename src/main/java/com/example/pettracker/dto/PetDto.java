@@ -16,6 +16,9 @@ public record PetDto(
         Long ownerId,
         String ownerName,
         String ownerEmail,
-        String imageUrl
+        String imageUrl,
+        String city,
+        String comuna,
+        String neighborhood
 ) {
 }

@@ -31,5 +31,11 @@ demo:
     enabled: true
     outside-interval-ms: 300000
 
+geocoding:
+  nominatim:
+    enabled: ${GEOCODING_NOMINATIM_ENABLED:true}
+    base-url: ${GEOCODING_NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+    user-agent: ${GEOCODING_NOMINATIM_USER_AGENT:pettracker/1.0}
+
 server:
   port: ${PORT:8080}

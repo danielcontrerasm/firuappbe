@@ -7,9 +7,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface LocationRepository extends JpaRepository<Location, Long> {
     List<Location> findFirstByPetIdOrderByTimestampDesc(Long petId);
+
+    Optional<Location> findTopByPetIdOrderByTimestampDesc(Long petId);
 
     @Query("SELECT l FROM Location l WHERE l.pet.owner.id = :userId")
     List<Location> findByUserId(@Param("userId") Long userId);

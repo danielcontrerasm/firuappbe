@@ -3,6 +3,7 @@ package com.example.pettracker.controller;
 import com.example.pettracker.dto.LocationDTO;
 import com.example.pettracker.dto.LocationRequest;
 import com.example.pettracker.dto.PetDto;
+import com.example.pettracker.dto.PetNeighborhoodDto;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
@@ -37,7 +38,10 @@ public class PetController {
     private final UserService userService;
     private final LocationService locationService;
 
-    public PetController(PetService petService, UserService userService, LocationService locationService) {
+    public PetController(
+            PetService petService,
+            UserService userService,
+            LocationService locationService) {
         this.petService = petService;
         this.userService = userService;
         this.locationService = locationService;
@@ -52,7 +56,7 @@ public class PetController {
     public List<PetDto> list(Authentication authentication) {
         User user = currentUser(authentication);
         return petService.listForUser(user).stream()
-                .map(PetMapper::toDto)
+                .map(this::toPetDto)
                 .toList();
     }
 
@@ -66,7 +70,7 @@ public class PetController {
         if (!canAccessPet(user, pet)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(PetMapper.toDto(pet));
+        return ResponseEntity.ok(toPetDto(pet));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -103,7 +107,7 @@ public class PetController {
             pet.setOwner(user);
         }
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(PetMapper.toDto(petService.create(pet, image)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toPetDto(petService.create(pet, image)));
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -127,7 +131,7 @@ public class PetController {
             existing.setOwner(owner);
         }
 
-        return ResponseEntity.ok(PetMapper.toDto(petService.update(existing)));
+        return ResponseEntity.ok(toPetDto(petService.update(existing)));
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -155,7 +159,7 @@ public class PetController {
             existing.setOwner(owner);
         }
 
-        return ResponseEntity.ok(PetMapper.toDto(petService.update(existing, image)));
+        return ResponseEntity.ok(toPetDto(petService.update(existing, image)));
     }
 
     @GetMapping("/{id}/image")
@@ -242,6 +246,25 @@ public class PetController {
         return ResponseEntity.ok(locationService.getPetRouteLast3Hours(id));
     }
 
+    @GetMapping("/{id}/neighborhood")
+    public ResponseEntity<PetNeighborhoodDto> neighborhood(@PathVariable Long id, Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet pet = petService.findById(id);
+        if (pet == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!canAccessPet(user, pet)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        Location latestLocation = locationService.getLatestByPetId(id);
+        if (latestLocation == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok(locationService.getNeighborhoodByPetId(id));
+    }
+
     @PostMapping("/{id}/locations")
     public ResponseEntity<LocationDTO> addLocation(
             @PathVariable Long id,
@@ -277,6 +300,31 @@ public class PetController {
     private boolean canAccessPet(User user, Pet pet) {
         return user.getRole() == User.Role.ADMIN
                 || (pet.getOwner() != null && pet.getOwner().getId() != null && pet.getOwner().getId().equals(user.getId()));
+    }
+
+    private PetDto toPetDto(Pet pet) {
+        PetDto base = PetMapper.toDto(pet);
+        PetNeighborhoodDto neighborhood = locationService.getNeighborhoodByPetId(pet.getId());
+
+        return new PetDto(
+                base.id(),
+                base.name(),
+                base.type(),
+                base.race(),
+                base.age(),
+                base.weight(),
+                base.status(),
+                base.statusLabel(),
+                base.imei(),
+                base.createdAt(),
+                base.ownerId(),
+                base.ownerName(),
+                base.ownerEmail(),
+                base.imageUrl(),
+                neighborhood == null ? null : neighborhood.city(),
+                neighborhood == null ? null : neighborhood.district(),
+                neighborhood == null ? null : neighborhood.neighborhood()
+        );
     }
 
     private void applyPetFields(Pet pet, PetDto request) {

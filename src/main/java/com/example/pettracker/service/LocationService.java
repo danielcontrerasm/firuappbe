@@ -1,6 +1,7 @@
 package com.example.pettracker.service;
 
 import com.example.pettracker.dto.LocationDTO;
+import com.example.pettracker.dto.PetNeighborhoodDto;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.mapper.LocationMapper;
 import com.example.pettracker.repository.LocationRepository;
@@ -15,11 +16,16 @@ public class LocationService {
     private final LocationRepository locationRepository;
     private final GpsIngestionService gpsIngestionService;
     private final LocationMapper locationMapper;
+    private final NeighborhoodLookupService neighborhoodLookupService;
     public LocationService(
-            LocationRepository locationRepository, GpsIngestionService gpsIngestionService, LocationMapper locationMapper) {
+            LocationRepository locationRepository,
+            GpsIngestionService gpsIngestionService,
+            LocationMapper locationMapper,
+            NeighborhoodLookupService neighborhoodLookupService) {
         this.locationRepository = locationRepository;
         this.gpsIngestionService = gpsIngestionService;
         this.locationMapper = locationMapper;
+        this.neighborhoodLookupService = neighborhoodLookupService;
     }
 
     public LocationDTO save(Location l) {
@@ -30,6 +36,18 @@ public class LocationService {
         return locationRepository.findFirstByPetIdOrderByTimestampDesc(petId).stream().map(locationMapper::toDto)
                 .toList();
 
+    }
+
+    public Location getLatestByPetId(Long petId) {
+        return locationRepository.findTopByPetIdOrderByTimestampDesc(petId).orElse(null);
+    }
+
+    public PetNeighborhoodDto getNeighborhoodByPetId(Long petId) {
+        Location latestLocation = getLatestByPetId(petId);
+        if (latestLocation == null) {
+            return null;
+        }
+        return neighborhoodLookupService.resolveNeighborhood(latestLocation);
     }
 
     public List<LocationDTO> findAll() {

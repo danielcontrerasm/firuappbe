@@ -25,7 +25,10 @@ public class PetMapper {
                 owner == null ? null : owner.getId(),
                 owner == null ? null : owner.getName(),
                 owner == null ? null : owner.getEmail(),
-                pet.getImageContentType() == null ? null : "/api/pets/" + pet.getId() + "/image"
+                pet.getImageContentType() == null ? null : "/api/pets/" + pet.getId() + "/image",
+                null,
+                null,
+                null
         );
     }
 
