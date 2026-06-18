@@ -21,6 +21,7 @@ Optional variables:
 
 ```env
 JWT_EXPIRATION_MS=86400000
+APP_CORS_ALLOWED_ORIGINS=http://localhost:3000,https://firuappfe-production.up.railway.app
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=

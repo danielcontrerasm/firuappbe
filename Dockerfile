@@ -7,6 +7,15 @@ RUN ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /workspace/build/libs/*.jar app.jar
+COPY --from=build /workspace/build/libs/pettracker-*.jar /tmp/libs/
+RUN set -eu; \
+    for jar in /tmp/libs/pettracker-*.jar; do \
+      case "$jar" in \
+        *-plain.jar) ;; \
+        *) cp "$jar" /app/app.jar ;; \
+      esac; \
+    done; \
+    test -f /app/app.jar; \
+    rm -rf /tmp/libs
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

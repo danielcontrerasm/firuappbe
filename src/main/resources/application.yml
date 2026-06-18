@@ -21,9 +21,15 @@ spring:
       hibernate:
         format_sql: true
 
+pettracker:
+  security:
+    default-jwt-secret: pettracker-local-development-secret-change-this-before-production-0123456789
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,https://firuappfe-production.up.railway.app}
+
 jwt:
-  # Override JWT_SECRET outside local development. HS512 needs a sufficiently long secret.
-  secret: ${JWT_SECRET:pettracker-local-development-secret-change-this-before-production-0123456789}
+  # Local development fallback only. Railway deployments must set JWT_SECRET explicitly.
+  secret: ${JWT_SECRET:${pettracker.security.default-jwt-secret}}
   expiration: ${JWT_EXPIRATION_MS:86400000}
 
 demo:
