@@ -129,7 +129,7 @@ public class TransitGeofencingService {
                 .flatMap(java.util.Optional::stream)
                 .forEach(user -> {
                     if (user.getPhone() != null && !user.getPhone().isBlank()) {
-                        notificationService.sendSms(user.getPhone(), event.getMessage());
+                        notificationService.sendPhoneNotification(user.getPhone(), event.getMessage());
                     }
                     if (user.getEmail() != null && !user.getEmail().isBlank()) {
                         notificationService.sendEmail(user.getEmail(), "Transit search alert", event.getMessage());

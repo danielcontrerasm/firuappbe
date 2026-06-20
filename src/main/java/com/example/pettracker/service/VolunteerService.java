@@ -143,7 +143,7 @@ public class VolunteerService {
 
         for (User volunteer : searchGroup.getVolunteers()) {
             if (volunteer.getPhone() != null && !volunteer.getPhone().isBlank()) {
-                notificationService.sendSms(volunteer.getPhone(), updateMessage);
+                notificationService.sendPhoneNotification(volunteer.getPhone(), updateMessage);
             }
             if (volunteer.getEmail() != null && !volunteer.getEmail().isBlank()) {
                 String subject = "Update: " + (searchGroup.getPet() != null ? searchGroup.getPet().getName() : "Search") + " Search";
@@ -205,7 +205,7 @@ public class VolunteerService {
 
             try {
                 if (volunteerUser.getPhone() != null && !volunteerUser.getPhone().isBlank()) {
-                    notificationService.sendSms(volunteerUser.getPhone(), message);
+                    notificationService.sendPhoneNotification(volunteerUser.getPhone(), message);
                 }
                 if (volunteerUser.getEmail() != null && !volunteerUser.getEmail().isBlank()) {
                     notificationService.sendEmail(volunteerUser.getEmail(), emailSubject, emailBody);
@@ -251,7 +251,7 @@ public class VolunteerService {
         );
 
         if (petOwner.getPhone() != null && !petOwner.getPhone().isBlank()) {
-            notificationService.sendSms(petOwner.getPhone(), message);
+            notificationService.sendPhoneNotification(petOwner.getPhone(), message);
         }
         if (petOwner.getEmail() != null && !petOwner.getEmail().isBlank()) {
             notificationService.sendEmail(petOwner.getEmail(), "New Volunteer Joined the Search", emailBody);

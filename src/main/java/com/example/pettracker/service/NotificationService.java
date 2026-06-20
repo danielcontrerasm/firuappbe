@@ -3,6 +3,7 @@ package com.example.pettracker.service;
 
 import com.example.pettracker.entity.User;
 import com.example.pettracker.repository.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -18,6 +19,7 @@ import com.twilio.type.PhoneNumber;
 import jakarta.annotation.PostConstruct;
 
 @Service
+@Slf4j
 public class NotificationService {
 
     @Value("${twilio.account-sid:}")
@@ -28,6 +30,12 @@ public class NotificationService {
 
     @Value("${twilio.phone-number:}")
     private String twilioNumber;
+
+    @Value("${twilio.whatsapp-enabled:false}")
+    private boolean twilioWhatsappEnabled;
+
+    @Value("${twilio.whatsapp-number:}")
+    private String twilioWhatsappNumber;
 
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
@@ -50,9 +58,38 @@ public class NotificationService {
 
     public void sendSms(String to, String body) {
         try {
-            if (twilioSid == null || twilioSid.isEmpty()) return;
+            if (!hasText(to) || !hasText(body) || !isSmsConfigured()) {
+                return;
+            }
             Message.creator(new PhoneNumber(to), new PhoneNumber(twilioNumber), body).create();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            log.warn("Failed to send SMS to {}: {}", to, e.getMessage(), e);
+        }
+    }
+
+    public void sendWhatsApp(String to, String body) {
+        try {
+            if (!hasText(to) || !hasText(body) || !isWhatsAppConfigured()) {
+                return;
+            }
+            Message.creator(
+                    new PhoneNumber(toWhatsAppAddress(to)),
+                    new PhoneNumber(toWhatsAppAddress(twilioWhatsappNumber)),
+                    body
+            ).create();
+        } catch (Exception e) {
+            log.warn("Failed to send WhatsApp message to {}: {}", to, e.getMessage(), e);
+        }
+    }
+
+    public void sendPhoneNotification(String to, String body) {
+        if (!hasText(to) || !hasText(body)) {
+            return;
+        }
+        sendSms(to, body);
+        if (isWhatsAppConfigured()) {
+            sendWhatsApp(to, body);
+        }
     }
 
     public void sendEmail(String to, String subject, String body) {
@@ -63,7 +100,9 @@ public class NotificationService {
             m.setSubject(subject);
             m.setText(body);
             mailSender.send(m);
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            log.warn("Failed to send email to {}: {}", to, e.getMessage(), e);
+        }
     }
     @Async("notificationExecutor")
     @Transactional(readOnly = true)
@@ -103,12 +142,43 @@ public class NotificationService {
     }
 
     private void notifyOwnerContacts(User owner, String emailSubject, String smsBody, String emailBody, String websocketBody) {
-        if (owner.getPhone() != null && !owner.getPhone().isBlank()) sendSms(owner.getPhone(), smsBody);
-        if (owner.getEmail() != null && !owner.getEmail().isBlank()) sendEmail(owner.getEmail(), emailSubject, emailBody);
-        // Send a WebSocket message to owner-specific topic
+        if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
+            sendPhoneNotification(owner.getPhone(), smsBody);
+        }
+        if (owner.getEmail() != null && !owner.getEmail().isBlank()) {
+            sendEmail(owner.getEmail(), emailSubject, emailBody);
+        }
+        sendRealtimeAlert(owner, websocketBody);
+    }
+
+    public void sendRealtimeAlert(User owner, String message) {
+        if (owner == null || owner.getId() == null || !hasText(message)) {
+            return;
+        }
         try {
-            messagingTemplate.convertAndSend("/topic/alerts/" + owner.getId(), websocketBody);
-        } catch (Exception e) { e.printStackTrace(); }
+            messagingTemplate.convertAndSend("/topic/alerts/" + owner.getId(), message);
+        } catch (Exception e) {
+            log.warn("Failed to publish WebSocket alert for owner {}: {}", owner.getId(), e.getMessage(), e);
+        }
+    }
+
+    private boolean isSmsConfigured() {
+        return hasText(twilioSid) && hasText(twilioToken) && hasText(twilioNumber);
+    }
+
+    private boolean isWhatsAppConfigured() {
+        return twilioWhatsappEnabled && hasText(twilioSid) && hasText(twilioToken) && hasText(twilioWhatsappNumber);
+    }
+
+    private String toWhatsAppAddress(String phoneNumber) {
+        if (phoneNumber.startsWith("whatsapp:")) {
+            return phoneNumber;
+        }
+        return "whatsapp:" + phoneNumber;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String buildLostPetMessage(String petName, String petType, String additionalInfo) {

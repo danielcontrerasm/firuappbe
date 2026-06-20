@@ -132,7 +132,7 @@ public class TransitSearchGroupService {
         String message = "You were added to transit search group '" + group.getGroupName() + "' for vehicle "
                 + group.getVehicle().getLabel();
         if (volunteer.getPhone() != null && !volunteer.getPhone().isBlank()) {
-            notificationService.sendSms(volunteer.getPhone(), message);
+            notificationService.sendPhoneNotification(volunteer.getPhone(), message);
         }
         if (volunteer.getEmail() != null && !volunteer.getEmail().isBlank()) {
             notificationService.sendEmail(volunteer.getEmail(), "Transit search group", message);

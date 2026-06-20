@@ -24,7 +24,7 @@ public class VolunteerNotificationService {
                 notificationService.sendEmail(volunteer.getUser().getEmail(), "Pet Alert", "Pet " + pet.getName() + " needs assistance: " + alertType);
             }
             if (volunteer.getUser().getPhone() != null && !volunteer.getUser().getPhone().isBlank()) {
-                notificationService.sendSms(volunteer.getUser().getPhone(), "Pet " + pet.getName() + " needs assistance: " + alertType);
+                notificationService.sendPhoneNotification(volunteer.getUser().getPhone(), "Pet " + pet.getName() + " needs assistance: " + alertType);
             }
         }
 

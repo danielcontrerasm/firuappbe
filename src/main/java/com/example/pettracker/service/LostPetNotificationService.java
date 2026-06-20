@@ -60,7 +60,7 @@ public class LostPetNotificationService {
 
         // Send SMS notification
         if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
-            notificationService.sendSms(owner.getPhone(), message);
+            notificationService.sendPhoneNotification(owner.getPhone(), message);
             log.info("SMS sent to owner {} for lost pet {}", owner.getId(), pet.getId());
         }
 
@@ -75,7 +75,7 @@ public class LostPetNotificationService {
         }
 
         // Send real-time WebSocket notification
-        notificationService.notifyOwner(owner, message);
+        notificationService.sendRealtimeAlert(owner, message);
         log.info("All notifications sent for lost pet: {}", pet.getId());
     }
 
@@ -122,7 +122,7 @@ public class LostPetNotificationService {
 
         // Send SMS notification
         if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
-            notificationService.sendSms(owner.getPhone(), message);
+            notificationService.sendPhoneNotification(owner.getPhone(), message);
             log.info("SMS sent to owner {} - pet {} found", owner.getId(), pet.getId());
         }
 
@@ -137,7 +137,7 @@ public class LostPetNotificationService {
         }
 
         // Send real-time WebSocket notification
-        notificationService.notifyOwner(owner, message);
+        notificationService.sendRealtimeAlert(owner, message);
         log.info("All notifications sent - pet found: {}", pet.getId());
     }
 }

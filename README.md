@@ -25,9 +25,13 @@ APP_CORS_ALLOWED_ORIGINS=http://localhost:3000,https://firuappfe-production.up.r
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
+TWILIO_WHATSAPP_ENABLED=false
+TWILIO_WHATSAPP_NUMBER=
 GEOCODING_NOMINATIM_ENABLED=true
 GEOCODING_NOMINATIM_USER_AGENT=pettracker/1.0
 ```
+
+If `TWILIO_WHATSAPP_ENABLED=true` and `TWILIO_WHATSAPP_NUMBER` is set to a Twilio WhatsApp sender, phone alerts are sent to both SMS and WhatsApp.
 
 You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps Railway's database URL variables into Spring datasource properties automatically.
 
