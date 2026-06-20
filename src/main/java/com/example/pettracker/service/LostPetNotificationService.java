@@ -33,55 +33,9 @@ public class LostPetNotificationService {
         User owner = pet.getOwner();
         String petName = pet.getName() != null ? pet.getName() : "Your pet";
         String petType = pet.getType() != null ? pet.getType() : "pet";
-
-        String message = String.format(
-            "ALERT: %s (%s) has been marked as LOST. " +
-            "Please contact authorities and check your email for more information.",
-            petName, petType
-        );
-
-        String emailBody = String.format(
-            "Dear %s,\n\n" +
-            "URGENT: Your %s '%s' has been marked as LOST.\n\n" +
-            "Pet Details:\n" +
-            "- Name: %s\n" +
-            "- Type: %s\n" +
-            "- Pet ID: %s\n\n" +
-            "Please take immediate action:\n" +
-            "1. Check your pet's last known location in the app\n" +
-            "2. Contact local animal shelters and authorities\n" +
-            "3. Share this information with nearby volunteers\n" +
-            "4. Check the app regularly for updates from search volunteers\n\n" +
-            "We're here to help. Stay strong!\n\n" +
-            "Best regards,\n" +
-            "PetTracker Team",
-            owner.getName(),
-            petType,
-            petName,
-            petName,
-            petType,
-            pet.getId()
-        );
-
-        // Send phone notification
-        if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
-            notificationService.sendPhoneNotification(owner.getPhone(), message);
-            log.info("Phone alert sent to owner {} for lost pet {}", owner.getId(), pet.getId());
-        }
-
-        // Send Email notification
-        if (owner.getEmail() != null && !owner.getEmail().isBlank()) {
-            notificationService.sendEmail(
-                owner.getEmail(),
-                "URGENT: Your Pet " + petName + " Has Been Marked as LOST",
-                emailBody
-            );
-            log.info("Email sent to owner {} for lost pet {}", owner.getId(), pet.getId());
-        }
-
-        // Send real-time WebSocket notification
-        notificationService.sendRealtimeAlert(owner, message);
-        log.info("All notifications sent for lost pet: {}", pet.getId());
+        String additionalInfo = "Pet ID: " + pet.getId();
+        notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
+        log.info("Lost pet notification queued for owner {} and pet {}", owner.getId(), pet.getId());
     }
 
     /**
