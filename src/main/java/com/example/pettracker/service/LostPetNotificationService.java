@@ -32,7 +32,12 @@ public class LostPetNotificationService {
         String petName = pet.getName() != null ? pet.getName() : "Your pet";
         String petType = pet.getType() != null ? pet.getType() : "pet";
         String additionalInfo = "Pet ID: " + pet.getId();
-        notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
+        notificationService.notifyOwner(pet.getOwner(),
+                "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
+        "Please take action immediately. Check your email for details.");
+
+
+       // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
         log.info("Lost pet notification queued for owner {} and pet {}", owner.getId(), pet.getId());
     }
 
