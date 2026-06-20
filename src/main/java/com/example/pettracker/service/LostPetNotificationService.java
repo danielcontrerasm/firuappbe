@@ -6,7 +6,6 @@ import com.example.pettracker.entity.User;
 import com.example.pettracker.repository.PetRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
-import org.springframework.scheduling.annotation.Async;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,7 +20,6 @@ public class LostPetNotificationService {
     /**
      * Sends notifications to pet owner when their pet is marked as lost
      */
-    @Async("notificationExecutor")
     @Transactional(readOnly = true)
     public void notifyPetLost(Long petId) {
         Pet pet = loadPet(petId);
@@ -41,7 +39,6 @@ public class LostPetNotificationService {
     /**
      * Sends notification when a lost pet is found
      */
-    @Async("notificationExecutor")
     @Transactional(readOnly = true)
     public void notifyPetFound(Long petId) {
         Pet pet = loadPet(petId);
