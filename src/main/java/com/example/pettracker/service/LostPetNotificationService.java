@@ -58,10 +58,10 @@ public class LostPetNotificationService {
             pet.getId()
         );
 
-        // Send SMS notification
+        // Send phone notification
         if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
             notificationService.sendPhoneNotification(owner.getPhone(), message);
-            log.info("SMS sent to owner {} for lost pet {}", owner.getId(), pet.getId());
+            log.info("Phone alert sent to owner {} for lost pet {}", owner.getId(), pet.getId());
         }
 
         // Send Email notification
@@ -120,10 +120,10 @@ public class LostPetNotificationService {
             pet.getId()
         );
 
-        // Send SMS notification
+        // Send phone notification
         if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
             notificationService.sendPhoneNotification(owner.getPhone(), message);
-            log.info("SMS sent to owner {} - pet {} found", owner.getId(), pet.getId());
+            log.info("Phone alert sent to owner {} - pet {} found", owner.getId(), pet.getId());
         }
 
         // Send Email notification

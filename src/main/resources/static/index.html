@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PetTracker Walkers</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin="">
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="app-shell">
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">Marketplace de paseadores</p>
+            <h1>Encuentra un paseador, acuerda tarifa y sigue el paseo en mapa</h1>
+        </div>
+        <div class="session-box">
+            <div id="sessionStatus" class="session-status">No has iniciado sesión.</div>
+            <button id="logoutBtn" class="ghost-button" hidden>Cerrar sesión</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="band layout-two">
+            <div class="column">
+                <div class="section-head">
+                    <h2>Paseadores disponibles</h2>
+                    <button id="refreshWalkersBtn" class="icon-button">Actualizar</button>
+                </div>
+                <div id="walkersWall" class="walker-grid"></div>
+            </div>
+
+            <div class="column forms-column">
+                <section class="tool-panel">
+                    <div class="section-head">
+                        <h2>Acceso de dueños</h2>
+                    </div>
+                    <form id="ownerRegisterForm" class="stack-form">
+                        <h3>Crear cuenta</h3>
+                        <input name="name" placeholder="Nombre completo" required>
+                        <input name="email" type="email" placeholder="Correo" required>
+                        <input name="phone" placeholder="Teléfono">
+                        <input name="password" type="password" placeholder="Contraseña" required>
+                        <button type="submit">Crear cuenta</button>
+                    </form>
+
+                    <form id="loginForm" class="stack-form">
+                        <h3>Iniciar sesión</h3>
+                        <input name="email" type="email" placeholder="Correo" required>
+                        <input name="password" type="password" placeholder="Contraseña" required>
+                        <button type="submit">Entrar</button>
+                    </form>
+                </section>
+
+                <section class="tool-panel">
+                    <div class="section-head">
+                        <h2>Formulario público para paseadores</h2>
+                    </div>
+                    <form id="walkerApplicationForm" class="stack-form">
+                        <input name="name" placeholder="Nombre completo" required>
+                        <input name="email" type="email" placeholder="Correo" required>
+                        <input name="phone" placeholder="Teléfono">
+                        <input name="password" type="password" placeholder="Contraseña" required>
+                        <input name="neighborhood" placeholder="Barrio o zona">
+                        <input name="experienceYears" type="number" min="0" placeholder="Años de experiencia">
+                        <input name="basePrice" type="number" min="0" step="0.01" placeholder="Tarifa base por paseo">
+                        <textarea name="bio" rows="3" placeholder="Presentación"></textarea>
+                        <textarea name="services" rows="2" placeholder="Servicios que ofreces"></textarea>
+                        <textarea name="availability" rows="2" placeholder="Disponibilidad"></textarea>
+                        <textarea name="priceNotes" rows="2" placeholder="Condiciones de tarifa"></textarea>
+                        <button type="submit">Enviar postulación</button>
+                    </form>
+                </section>
+            </div>
+        </section>
+
+        <section id="dashboardBand" class="band" hidden>
+            <div class="section-head">
+                <h2>Panel operativo</h2>
+                <div class="panel-actions">
+                    <button id="refreshDashboardBtn" class="icon-button">Actualizar panel</button>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <section id="ownerPanel" class="tool-panel" hidden>
+                    <div class="section-head">
+                        <h3>Dueño: mascotas y solicitudes</h3>
+                    </div>
+
+                    <form id="petForm" class="stack-form compact">
+                        <h4>Registrar mascota</h4>
+                        <input name="name" placeholder="Nombre" required>
+                        <input name="type" placeholder="Tipo" required>
+                        <input name="race" placeholder="Raza">
+                        <input name="age" type="number" min="0" placeholder="Edad">
+                        <input name="weight" type="number" min="0" step="0.1" placeholder="Peso">
+                        <input name="imei" placeholder="IMEI del tracker">
+                        <button type="submit">Guardar mascota</button>
+                    </form>
+
+                    <div>
+                        <h4>Mis mascotas</h4>
+                        <div id="petsList" class="list-stack"></div>
+                    </div>
+
+                    <div>
+                        <h4>Mis solicitudes de paseo</h4>
+                        <div id="ownerRequests" class="list-stack"></div>
+                    </div>
+                </section>
+
+                <section id="walkerPanel" class="tool-panel" hidden>
+                    <div class="section-head">
+                        <h3>Paseador: solicitudes y seguimiento</h3>
+                    </div>
+                    <div id="walkerProfileCard" class="list-stack"></div>
+                    <div>
+                        <h4>Solicitudes recibidas</h4>
+                        <div id="walkerRequests" class="list-stack"></div>
+                    </div>
+                    <div>
+                        <h4>Paseos activos e históricos</h4>
+                        <div id="walkerDogWalks" class="list-stack"></div>
+                    </div>
+                </section>
+
+                <section id="adminPanel" class="tool-panel" hidden>
+                    <div class="section-head">
+                        <h3>Backend de administración</h3>
+                    </div>
+                    <form id="adminCreateWalkerForm" class="stack-form compact">
+                        <h4>Registrar paseador manualmente</h4>
+                        <input name="name" placeholder="Nombre" required>
+                        <input name="email" type="email" placeholder="Correo" required>
+                        <input name="phone" placeholder="Teléfono">
+                        <input name="password" type="password" placeholder="Contraseña" required>
+                        <input name="neighborhood" placeholder="Zona">
+                        <input name="basePrice" type="number" min="0" step="0.01" placeholder="Tarifa base">
+                        <textarea name="bio" rows="2" placeholder="Bio"></textarea>
+                        <button type="submit">Registrar paseador</button>
+                    </form>
+                    <div id="adminWalkers" class="list-stack"></div>
+                </section>
+
+                <section id="conversationPanel" class="tool-panel wide-panel" hidden>
+                    <div class="section-head">
+                        <h3 id="conversationTitle">Detalle de solicitud</h3>
+                    </div>
+                    <div id="requestDetail" class="detail-box"></div>
+                    <div id="requestActions" class="action-strip"></div>
+                    <div id="messagesList" class="messages-box"></div>
+                    <form id="messageForm" class="message-form">
+                        <input name="body" placeholder="Escribe un mensaje para acordar tarifa o confirmar detalles" required>
+                        <button type="submit">Enviar</button>
+                    </form>
+                </section>
+
+                <section id="mapPanel" class="tool-panel wide-panel" hidden>
+                    <div class="section-head">
+                        <h3 id="mapTitle">Mapa del paseo</h3>
+                        <div class="panel-actions">
+                            <button id="refreshMapBtn" class="icon-button">Actualizar mapa</button>
+                            <button id="sendMyPositionBtn" class="icon-button" hidden>Enviar mi posición</button>
+                            <button id="completeWalkBtn" class="icon-button danger" hidden>Marcar finalizado</button>
+                        </div>
+                    </div>
+                    <div id="mapMeta" class="detail-box"></div>
+                    <div id="walkMap"></div>
+                </section>
+            </div>
+        </section>
+    </main>
+    <div id="toast" class="toast" hidden></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script src="/app.js"></script>
+</body>
+</html>

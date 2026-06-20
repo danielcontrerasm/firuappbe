@@ -40,7 +40,17 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/ws/**").permitAll()
+                .requestMatchers(
+                        "/",
+                        "/index.html",
+                        "/app.css",
+                        "/app.js",
+                        "/api/auth/**",
+                        "/api/public/**",
+                        "/api/walker-applications",
+                        "/ws/**",
+                        "/error")
+                .permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )

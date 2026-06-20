@@ -38,6 +38,8 @@ class NotificationServiceTest {
 
     @Test
     void sendPhoneNotificationSendsSmsAndWhatsAppWhenEnabled() {
+        ReflectionTestUtils.setField(notificationService, "twilioSid", "sid");
+        ReflectionTestUtils.setField(notificationService, "twilioToken", "token");
         ReflectionTestUtils.setField(notificationService, "twilioWhatsappEnabled", true);
         ReflectionTestUtils.setField(notificationService, "twilioWhatsappNumber", "+14155238886");
 
