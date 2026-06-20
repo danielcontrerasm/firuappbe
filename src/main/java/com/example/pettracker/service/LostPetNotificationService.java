@@ -23,6 +23,9 @@ public class LostPetNotificationService {
     @Transactional(readOnly = true)
     public void notifyPetLost(Long petId) {
         Pet pet = loadPet(petId);
+        log.info("Entered notifyPetLost in lostPetNotificationService with petId: {}", pet.getId());
+
+
         if (pet == null || pet.getOwner() == null) {
             log.warn("Invalid pet or owner for lost pet notification");
             return;
@@ -32,6 +35,9 @@ public class LostPetNotificationService {
         String petName = pet.getName() != null ? pet.getName() : "Your pet";
         String petType = pet.getType() != null ? pet.getType() : "pet";
         String additionalInfo = "Pet ID: " + pet.getId();
+        log.info("before notificationService.notifyOwner in lostPetNotificationService with petId: {}", pet.getId());
+        log.info("owner is notificationService.notifyOwner : {}", owner.getName());
+
         notificationService.notifyOwner(pet.getOwner(),
                 "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
         "Please take action immediately. Check your email for details.");
