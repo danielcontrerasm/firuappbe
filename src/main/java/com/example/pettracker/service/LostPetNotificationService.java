@@ -3,6 +3,8 @@ package com.example.pettracker.service;
 
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
+import com.example.pettracker.repository.PetRepository;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
 import lombok.RequiredArgsConstructor;
@@ -14,12 +16,15 @@ import lombok.extern.slf4j.Slf4j;
 public class LostPetNotificationService {
 
     private final NotificationService notificationService;
+    private final PetRepository petRepository;
 
     /**
      * Sends notifications to pet owner when their pet is marked as lost
      */
     @Async("notificationExecutor")
-    public void notifyPetLost(Pet pet) {
+    @Transactional(readOnly = true)
+    public void notifyPetLost(Long petId) {
+        Pet pet = loadPet(petId);
         if (pet == null || pet.getOwner() == null) {
             log.warn("Invalid pet or owner for lost pet notification");
             return;
@@ -83,7 +88,9 @@ public class LostPetNotificationService {
      * Sends notification when a lost pet is found
      */
     @Async("notificationExecutor")
-    public void notifyPetFound(Pet pet) {
+    @Transactional(readOnly = true)
+    public void notifyPetFound(Long petId) {
+        Pet pet = loadPet(petId);
         if (pet == null || pet.getOwner() == null) {
             log.warn("Invalid pet or owner for found pet notification");
             return;
@@ -139,5 +146,12 @@ public class LostPetNotificationService {
         // Send real-time WebSocket notification
         notificationService.sendRealtimeAlert(owner, message);
         log.info("All notifications sent - pet found: {}", pet.getId());
+    }
+
+    private Pet loadPet(Long petId) {
+        if (petId == null) {
+            return null;
+        }
+        return petRepository.findById(petId).orElse(null);
     }
 }

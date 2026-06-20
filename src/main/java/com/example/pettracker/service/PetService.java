@@ -111,7 +111,7 @@ public class PetService {
         Pet updatedPet = petRepository.save(pet);
 
         // Send notifications to owner
-        lostPetNotificationService.notifyPetLost(updatedPet);
+        lostPetNotificationService.notifyPetLost(updatedPet.getId());
 
         return updatedPet;
     }
@@ -124,7 +124,7 @@ public class PetService {
         Pet updatedPet = petRepository.save(pet);
 
         // Send notifications to owner
-        lostPetNotificationService.notifyPetFound(updatedPet);
+        lostPetNotificationService.notifyPetFound(updatedPet.getId());
 
         return updatedPet;
     }
