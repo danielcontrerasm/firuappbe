@@ -156,6 +156,7 @@ public class NotificationService {
 
         String smsBody = "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
                 "Please take action immediately. Check your email for details.";
+        log.info("Sending lost pet SMS notification - Body: {}", smsBody);
 
         notifyOwnerContacts(
                 managedOwner,
