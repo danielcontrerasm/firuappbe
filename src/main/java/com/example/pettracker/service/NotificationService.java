@@ -37,6 +37,9 @@ public class NotificationService {
     @Value("${twilio.whatsapp-number:}")
     private String twilioWhatsappNumber;
 
+    @Value("${notifications.email.from:}")
+    private String emailFrom;
+
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
     private final UserRepository userRepository;
@@ -53,12 +56,20 @@ public class NotificationService {
     public void init() {
         if (!twilioSid.isBlank() && !twilioToken.isBlank()) {
             Twilio.init(twilioSid, twilioToken);
+            log.info("Twilio notifications enabled");
+        } else {
+            log.warn("Twilio notifications disabled: missing account SID or auth token");
         }
     }
 
     public void sendSms(String to, String body) {
         try {
-            if (!hasText(to) || !hasText(body) || !isSmsConfigured()) {
+            if (!hasText(to) || !hasText(body)) {
+                log.warn("SMS skipped: destination or body missing");
+                return;
+            }
+            if (!isSmsConfigured()) {
+                log.warn("SMS skipped for {}: Twilio SMS is not fully configured", to);
                 return;
             }
             Message.creator(new PhoneNumber(to), new PhoneNumber(twilioNumber), body).create();
@@ -69,7 +80,12 @@ public class NotificationService {
 
     public void sendWhatsApp(String to, String body) {
         try {
-            if (!hasText(to) || !hasText(body) || !isWhatsAppConfigured()) {
+            if (!hasText(to) || !hasText(body)) {
+                log.warn("WhatsApp skipped: destination or body missing");
+                return;
+            }
+            if (!isWhatsAppConfigured()) {
+                log.warn("WhatsApp skipped for {}: Twilio WhatsApp is not fully configured", to);
                 return;
             }
             Message.creator(
@@ -94,11 +110,21 @@ public class NotificationService {
 
     public void sendEmail(String to, String subject, String body) {
         try {
-            if (mailSender == null) return;
+            if (!hasText(to) || !hasText(subject) || !hasText(body)) {
+                log.warn("Email skipped: destination, subject, or body missing");
+                return;
+            }
+            if (mailSender == null) {
+                log.warn("Email skipped for {}: Spring Mail is not configured", to);
+                return;
+            }
             SimpleMailMessage m = new SimpleMailMessage();
             m.setTo(to);
             m.setSubject(subject);
             m.setText(body);
+            if (hasText(emailFrom)) {
+                m.setFrom(emailFrom);
+            }
             mailSender.send(m);
         } catch (Exception e) {
             log.warn("Failed to send email to {}: {}", to, e.getMessage(), e);

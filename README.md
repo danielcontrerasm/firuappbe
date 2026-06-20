@@ -27,11 +27,19 @@ TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 TWILIO_WHATSAPP_ENABLED=false
 TWILIO_WHATSAPP_NUMBER=
+SPRING_MAIL_HOST=
+SPRING_MAIL_PORT=587
+SPRING_MAIL_USERNAME=
+SPRING_MAIL_PASSWORD=
+SPRING_MAIL_SMTP_AUTH=true
+SPRING_MAIL_SMTP_STARTTLS_ENABLE=true
+NOTIFICATIONS_EMAIL_FROM=
 GEOCODING_NOMINATIM_ENABLED=true
 GEOCODING_NOMINATIM_USER_AGENT=pettracker/1.0
 ```
 
 If `TWILIO_WHATSAPP_ENABLED=true` and `TWILIO_WHATSAPP_NUMBER` is set to a Twilio WhatsApp sender, phone alerts are sent to both SMS and WhatsApp.
+Email notifications require valid `SPRING_MAIL_*` SMTP settings. SMS requires the Twilio variables above.
 
 You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps Railway's database URL variables into Spring datasource properties automatically.
 
