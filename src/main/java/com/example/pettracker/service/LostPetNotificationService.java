@@ -39,7 +39,7 @@ public class LostPetNotificationService {
         log.info("owner is notificationService.notifyOwner : {}", owner.getName());
          
         notificationService.notifyOwner(pet.getOwner(),
-                 petName + " has been marked as LOLST. ");
+                 petName + "  fue reportado como perdido. Abre la aplicación para revisar su ubicación y comenzar la búsqueda. ");
 
         log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
         // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
