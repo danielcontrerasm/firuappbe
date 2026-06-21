@@ -110,15 +110,12 @@ public class PetService {
         log.info("Entered markPetAsLost in PetService with petId: {}", petId);
         Pet pet = petRepository.findById(petId)
                 .orElseThrow(() -> new RuntimeException("Pet not found"));
-        log.info("found pet  markPetAsLost in PetService with petId: {}", pet.getId());
 
         pet.setStatus(Pet.Status.LOST);
         Pet updatedPet = petRepository.save(pet);
-        log.info("found updated pet  markPetAsLost in PetService with petId: {}", pet.getId());
 
         // Send notifications to owner
         lostPetNotificationService.notifyPetLost(updatedPet.getId());
-        log.info("lostPetNotificationService  pet  markPetAsLost in PetService with petId: {}", pet.getId());
 
         return updatedPet;
     }

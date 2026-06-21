@@ -37,13 +37,13 @@ public class LostPetNotificationService {
         String additionalInfo = "Pet ID: " + pet.getId();
         log.info("before notificationService.notifyOwner in lostPetNotificationService with petId: {}", pet.getId());
         log.info("owner is notificationService.notifyOwner : {}", owner.getName());
-
+         
         notificationService.notifyOwner(pet.getOwner(),
                 "ALERT: Your " + petType + " '" + petName + "' has been marked as LOST. " +
         "Please take action immediately. Check your email for details.");
 
-
-       // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
+        log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
+        // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
         log.info("Lost pet notification queued for owner {} and pet {}", owner.getId(), pet.getId());
     }
 

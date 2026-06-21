@@ -63,6 +63,7 @@ public class NotificationService {
     }
 
     public void sendSms(String to, String body) {
+        log.info("Sending SMS notification to {} - Body: {}", to, body);
         try {
             if (!hasText(to) || !hasText(body)) {
                 log.warn("SMS skipped: destination or body missing");
@@ -72,6 +73,8 @@ public class NotificationService {
                 log.warn("SMS skipped for {}: Twilio SMS is not fully configured", to);
                 return;
             }
+
+            log.info("Sending SMS via Twilio to {} from {}", to, twilioNumber);
             Message.creator(new PhoneNumber(to), new PhoneNumber(twilioNumber), body).create();
         } catch (Exception e) {
             log.warn("Failed to send SMS to {}: {}", to, e.getMessage(), e);
@@ -99,9 +102,13 @@ public class NotificationService {
     }
 
     public void sendPhoneNotification(String to, String body) {
+        log.info("Sending phone notification to {} - Body: {}", to, body);
+
         if (!hasText(to) || !hasText(body)) {
             return;
         }
+        log.info("Proceeding with phone notification to {}", to);
+
         sendSms(to, body);
         if (isWhatsAppConfigured()) {
             sendWhatsApp(to, body);
@@ -133,12 +140,14 @@ public class NotificationService {
     @Async("notificationExecutor")
     @Transactional(readOnly = true)
     public void notifyOwner(User owner, String message) {
+        log.info("Sending owner notification - Body: {}", message);
         if (owner == null) return;
         Long ownerId = owner.getId();
         if (ownerId == null) return;
 
         User managedOwner = userRepository.findById(ownerId).orElse(null);
         if (managedOwner == null) return;
+        log.info("Retrieved managed owner with ID: {}", ownerId);
 
         notifyOwnerContacts(managedOwner, "Pet Alert", message, message, message);
     }
@@ -168,6 +177,8 @@ public class NotificationService {
     }
 
     private void notifyOwnerContacts(User owner, String emailSubject, String smsBody, String emailBody, String websocketBody) {
+        log.info("Notifying owner {} - Email subject: {}, SMS body: {}", owner.getId(), emailSubject, smsBody);
+
         if (owner.getPhone() != null && !owner.getPhone().isBlank()) {
             sendPhoneNotification(owner.getPhone(), smsBody);
         }
