@@ -39,7 +39,7 @@ public class LostPetNotificationService {
         log.info("owner is notificationService.notifyOwner : {}", owner.getName());
          
         notificationService.notifyOwner(pet.getOwner(),
-                "Alert: Your pet '" +
+                "Alert: Your pet " +
                         petName  +
                         "was marked as lost ");
 
