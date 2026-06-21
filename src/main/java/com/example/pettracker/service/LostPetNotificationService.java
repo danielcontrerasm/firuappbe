@@ -42,6 +42,8 @@ public class LostPetNotificationService {
                 "Alert: Your pet " +
                         petName  +
                         "left home ");
+        notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche necesita tu ayuda. Revisa su ubicacion en la app.");
+        notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche salio de su zona segura. Revisa su ubicacion en la app");
 
         log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
         // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
