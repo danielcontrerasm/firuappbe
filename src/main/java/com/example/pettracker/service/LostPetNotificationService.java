@@ -41,7 +41,7 @@ public class LostPetNotificationService {
         notificationService.notifyOwner(pet.getOwner(),
                 "Alert: Your pet " +
                         petName  +
-                        "was marked as lost ");
+                        "left home ");
 
         log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
         // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
