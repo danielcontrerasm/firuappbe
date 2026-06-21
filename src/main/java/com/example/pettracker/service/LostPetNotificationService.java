@@ -39,7 +39,7 @@ public class LostPetNotificationService {
         log.info("owner is notificationService.notifyOwner : {}", owner.getName());
          
         notificationService.notifyOwner(pet.getOwner(),
-                 petName + "  fue reportado como perdido. Abre la aplicación para revisar su ubicación y comenzar la búsqueda. ");
+                "Alert: Your pet Peluche left its geofence. Out of geofence at 6.217903,-75.572110 ");
 
         log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
         // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
