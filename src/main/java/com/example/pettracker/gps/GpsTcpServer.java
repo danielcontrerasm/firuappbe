@@ -33,6 +33,7 @@ public class GpsTcpServer {
 
     @EventListener(ApplicationReadyEvent.class)
     public void start() throws InterruptedException {
+        log.info("Starting GPS TCP listener on port {}", port);
         boss = new NioEventLoopGroup(1);
         workers = new NioEventLoopGroup();
 
@@ -42,6 +43,7 @@ public class GpsTcpServer {
          .childHandler(new ChannelInitializer<io.netty.channel.socket.SocketChannel>() {
              @Override
              protected void initChannel(io.netty.channel.socket.SocketChannel ch) {
+                 log.info("Accepted GPS TCP channel remote={} local={}", ch.remoteAddress(), ch.localAddress());
                  ch.pipeline()
                    .addLast(new LineBasedFrameDecoder(2048))
                    .addLast(new StringDecoder())
@@ -49,9 +51,20 @@ public class GpsTcpServer {
              }
          });
 
-        ChannelFuture f = b.bind(port).sync();
-        serverChannel = f.channel();
-        log.info("GPS TCP listener started on port {}", port);
+        try {
+            ChannelFuture f = b.bind(port).sync();
+            serverChannel = f.channel();
+            log.info("GPS TCP listener started localAddress={}", serverChannel.localAddress());
+        } catch (InterruptedException ex) {
+            log.error("GPS TCP listener startup interrupted on port {}", port, ex);
+            shutdownEventLoops();
+            Thread.currentThread().interrupt();
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.error("GPS TCP listener failed to start on port {}", port, ex);
+            shutdownEventLoops();
+            throw ex;
+        }
     }
 
     @PreDestroy
@@ -59,8 +72,12 @@ public class GpsTcpServer {
         try {
             if (serverChannel != null) serverChannel.close().sync();
         } catch (InterruptedException ignored) {}
+        shutdownEventLoops();
+        log.info("GPS TCP listener stopped");
+    }
+
+    private void shutdownEventLoops() {
         if (boss != null) boss.shutdownGracefully();
         if (workers != null) workers.shutdownGracefully();
-        log.info("GPS TCP listener stopped");
     }
 }
