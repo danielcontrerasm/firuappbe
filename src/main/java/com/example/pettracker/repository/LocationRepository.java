@@ -17,18 +17,14 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     @Query("SELECT l FROM Location l WHERE l.pet.owner.id = :userId")
     List<Location> findByUserId(@Param("userId") Long userId);
 
-    @Query("""
-    SELECT l 
-    FROM Location l
-    WHERE l.timestamp = (
-        SELECT MAX(l2.timestamp)
-        FROM Location l2
-        WHERE l2.pet.id = l.pet.id
-    )
-    AND l.pet.owner.id = :userId
-""")
+    @Query(value = """
+    SELECT DISTINCT ON (l.pet_id) l.*
+    FROM location l
+    JOIN pet p ON p.id = l.pet_id
+    WHERE p.owner_id = :userId
+    ORDER BY l.pet_id, l.timestamp DESC
+    """, nativeQuery = true)
     List<Location> findLastLocationsByUserId(@Param("userId") Long userId);
-
     @Query("SELECT l FROM Location l WHERE l.pet.id = :petId AND l.timestamp >= :cutoff ORDER BY l.timestamp ASC")
     List<Location> findPetRouteLast3Hours(@Param("petId") Long petId, @Param("cutoff") LocalDateTime cutoff);
 
