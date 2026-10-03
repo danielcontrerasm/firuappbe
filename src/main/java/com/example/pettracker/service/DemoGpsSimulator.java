@@ -15,8 +15,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-@Service
-@ConditionalOnProperty(name = "demo.gps.enabled", havingValue = "true")
+// Disabled: this simulator creates mock GPS positions for Bella, Peluche, and Rocky.
+// @Service
+// @ConditionalOnProperty(name = "demo.gps.enabled", havingValue = "true")
 public class DemoGpsSimulator {
 
     private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;

@@ -25,7 +25,13 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:petuser}
     password: ${SPRING_DATASOURCE_PASSWORD:petpass}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:20}
+      minimum-idle: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:5}
+      connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT:30000}
+      leak-detection-threshold: ${SPRING_DATASOURCE_HIKARI_LEAK_DETECTION_THRESHOLD:20000}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
     properties:
@@ -45,7 +51,7 @@ jwt:
 
 demo:
   gps:
-    enabled: true
+    enabled: false
     outside-interval-ms: 300000
 
 geocoding:

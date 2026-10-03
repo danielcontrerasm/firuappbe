@@ -7,6 +7,7 @@ import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.GpsPosition;
 import com.example.pettracker.service.GpsIngestionService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import io.netty.util.AttributeKey;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -137,6 +138,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     sanitizeForLog(payload),
                     effectiveImei);
 
+            sendAsciiAckIfRequired(ctx, protocol, terminalId, command, remoteAddress);
+
             Coordinates coordinates = extractCoordinates(payload);
             if (coordinates == null) {
                 log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
@@ -215,6 +218,42 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private String payloadCommand(String payload) {
         int commaIndex = payload.indexOf(',');
         return commaIndex < 0 ? payload : payload.substring(0, commaIndex);
+    }
+
+    private void sendAsciiAckIfRequired(
+            ChannelHandlerContext ctx,
+            String protocol,
+            String terminalId,
+            String command,
+            String remoteAddress
+    ) {
+        if (!requiresAsciiAck(command)) {
+            log.debug("GPS ASCII command does not require ACK remote={} command={} terminalId={}",
+                    remoteAddress, command, terminalId);
+            return;
+        }
+
+        String response = buildAsciiFrame(protocol, terminalId, command);
+        ctx.writeAndFlush(Unpooled.copiedBuffer(response, StandardCharsets.US_ASCII))
+                .addListener(future -> {
+                    if (future.isSuccess()) {
+                        log.info("Sent GPS ASCII ACK remote={} command={} response='{}'",
+                                remoteAddress, command, response);
+                    } else {
+                        log.warn("Failed to send GPS ASCII ACK remote={} command={} response='{}': {}",
+                                remoteAddress, command, response, future.cause().getMessage(), future.cause());
+                    }
+                });
+    }
+
+    private boolean requiresAsciiAck(String command) {
+        return "LK".equalsIgnoreCase(command)
+                || "TKQ".equalsIgnoreCase(command)
+                || "TKQ2".equalsIgnoreCase(command);
+    }
+
+    private String buildAsciiFrame(String protocol, String terminalId, String command) {
+        return "[" + protocol + "*" + terminalId + "*" + String.format("%04X", command.length()) + "*" + command + "]";
     }
 
     private String extractImei(String payload) {
