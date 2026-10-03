@@ -69,5 +69,9 @@ gps:
   listener:
     port: 5000
 
+logging:
+  level:
+    com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder: DEBUG
+
 server:
   port: 8080

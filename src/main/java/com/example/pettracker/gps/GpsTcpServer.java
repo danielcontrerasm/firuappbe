@@ -1,12 +1,11 @@
 // com.example.pettracker.gps.GpsTcpServer
 package com.example.pettracker.gps;
 
+import com.example.pettracker.gps.protocol.v41.V41FrameDecoder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.string.StringDecoder;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,8 +44,7 @@ public class GpsTcpServer {
              protected void initChannel(io.netty.channel.socket.SocketChannel ch) {
                  log.info("Accepted GPS TCP channel remote={} local={}", ch.remoteAddress(), ch.localAddress());
                  ch.pipeline()
-                   .addLast(new LineBasedFrameDecoder(2048))
-                   .addLast(new StringDecoder())
+                   .addLast(new V41FrameDecoder())
                    .addLast(handler);
              }
          });
