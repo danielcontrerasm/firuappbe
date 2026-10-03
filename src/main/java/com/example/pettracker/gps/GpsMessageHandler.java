@@ -10,6 +10,7 @@ import com.example.pettracker.repository.PetRepository;
 import com.example.pettracker.service.LocationService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.util.AttributeKey;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -17,10 +18,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -30,6 +34,10 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     //private final GpsKafkaProducer producer;
     private static final int MAX_HEX_LOG_LENGTH = 512;
+    private static final int V41_FRAME_FLAG = 0x7E;
+    private static final int ASCII_FRAME_START = '[';
+    private static final AttributeKey<String> DEVICE_IMEI = AttributeKey.valueOf("gps.device.imei");
+    private static final Pattern IMEI_PATTERN = Pattern.compile("\\b\\d{14,17}\\b");
 
     private final LocationService locationService;
     private final PetRepository petRepository;
@@ -50,10 +58,22 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         String remoteAddress = String.valueOf(ctx.channel().remoteAddress());
         int bytes = frame.readableBytes();
         String frameHex = ByteBufUtil.hexDump(frame, frame.readerIndex(), bytes);
-        log.info("Received GPS V41 frame remote={} bytes={} hex={}", remoteAddress, bytes, truncateHex(frameHex));
+        log.info("Received GPS TCP frame remote={} bytes={} hex={}", remoteAddress, bytes, truncateHex(frameHex));
 
         if (!frame.isReadable()) {
-            log.warn("Ignoring empty GPS V41 frame remote={}", remoteAddress);
+            log.warn("Ignoring empty GPS TCP frame remote={}", remoteAddress);
+            return;
+        }
+
+        int firstByte = frame.getUnsignedByte(frame.readerIndex());
+        if (firstByte == ASCII_FRAME_START) {
+            handleAsciiBracketFrame(ctx, frame, remoteAddress, frameHex);
+            return;
+        }
+
+        if (firstByte != V41_FRAME_FLAG) {
+            log.warn("Unsupported GPS frame remote={} firstByte=0x{} hex={}",
+                    remoteAddress, String.format("%02X", firstByte), truncateHex(frameHex));
             return;
         }
 
@@ -80,6 +100,74 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
+    private void handleAsciiBracketFrame(ChannelHandlerContext ctx, ByteBuf frame, String remoteAddress, String frameHex) {
+        String raw = frame.toString(StandardCharsets.US_ASCII);
+        log.info("Received GPS ASCII frame remote={} raw='{}'", remoteAddress, sanitizeForLog(raw));
+
+        try {
+            if (!raw.startsWith("[") || !raw.endsWith("]")) {
+                log.warn("Invalid GPS ASCII frame boundaries remote={} raw='{}'", remoteAddress, sanitizeForLog(raw));
+                return;
+            }
+
+            String content = raw.substring(1, raw.length() - 1);
+            String[] headerParts = content.split("\\*", 4);
+            if (headerParts.length < 4) {
+                log.warn("Invalid GPS ASCII frame structure remote={} fields={} raw='{}'",
+                        remoteAddress, headerParts.length, sanitizeForLog(raw));
+                return;
+            }
+
+            String protocol = headerParts[0];
+            String terminalId = headerParts[1];
+            String declaredLength = headerParts[2];
+            String payload = headerParts[3];
+            String command = payloadCommand(payload);
+            String imeiFromPayload = extractImei(payload);
+
+            if (imeiFromPayload != null) {
+                ctx.channel().attr(DEVICE_IMEI).set(imeiFromPayload);
+                log.info("GPS ASCII learned IMEI remote={} terminalId={} imei={} command={}",
+                        remoteAddress, terminalId, imeiFromPayload, command);
+            }
+
+            String knownImei = ctx.channel().attr(DEVICE_IMEI).get();
+            String effectiveImei = knownImei != null ? knownImei : terminalId;
+
+            log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}' effectiveImei={}",
+                    remoteAddress,
+                    protocol,
+                    terminalId,
+                    declaredLength,
+                    command,
+                    sanitizeForLog(payload),
+                    effectiveImei);
+
+            logPetBindingStatus(effectiveImei, remoteAddress);
+
+            Coordinates coordinates = extractCoordinates(payload);
+            if (coordinates == null) {
+                log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
+                        remoteAddress, command, terminalId, effectiveImei);
+                return;
+            }
+
+            persistDecodedLocation(
+                    "ASCII_BRACKET",
+                    effectiveImei,
+                    coordinates.latitude(),
+                    coordinates.longitude(),
+                    Instant.now(),
+                    true,
+                    remoteAddress,
+                    "command=" + command + ",terminalId=" + terminalId
+            );
+        } catch (Exception ex) {
+            log.warn("Failed to process GPS ASCII frame remote={} hex={} raw='{}': {}",
+                    remoteAddress, truncateHex(frameHex), sanitizeForLog(raw), ex.getMessage(), ex);
+        }
+    }
+
     private void persistLocation(GpsPosition position, String remoteAddress) {
         String imei = position.getTerminalId();
         if (imei == null || imei.isBlank()) {
@@ -97,38 +185,19 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             double lat = position.getLatitude();
             double lon = position.getLongitude();
             Instant instant = position.getTimestamp() == null ? Instant.now() : position.getTimestamp();
-            LocalDateTime timestamp = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
             log.info("Parsed GPS V41 location remote={} imei={} lat={} lon={} timestamp={} gpsValid={} speed={} course={} alarm={} additionalFields={}",
                     remoteAddress,
                     imei,
                     lat,
                     lon,
-                    timestamp,
+                    LocalDateTime.ofInstant(instant, ZoneOffset.UTC),
                     position.isGpsValid(),
                     position.getSpeed(),
                     position.getCourse(),
                     position.getAlarm(),
                     position.getAdditionalFields());
 
-            Optional<Pet> petOpt = petRepository.findByImei(imei);
-            if (petOpt.isEmpty()) {
-                log.warn("GPS V41 location for unknown IMEI={} remote={} (no pet bound). Skipping persist.", imei, remoteAddress);
-                return;
-            }
-            Pet pet = petOpt.get();
-            log.info("Matched GPS V41 IMEI={} to pet id={} remote={}", imei, pet.getId(), remoteAddress);
-
-            Location loc = Location.builder()
-                    .pet(pet)
-                    .timestamp(timestamp)
-                    .latitude(lat)
-                    .longitude(lon)
-                    //.position(p)
-                    .build();
-
-            locationService.save(loc);
-            log.info("Persisted GPS V41 location petId={} imei={} lat={} lon={} timestamp={} gpsValid={} remote={}",
-                    pet.getId(), imei, lat, lon, timestamp, position.isGpsValid(), remoteAddress);
+            persistDecodedLocation("V41", imei, lat, lon, instant, position.isGpsValid(), remoteAddress, position.toString());
             //producer.sendLocation(imei, lat, lon, ts);
         } catch (Exception ex) {
             log.warn("Failed to persist GPS V41 location remote={} imei={} position={}: {}",
@@ -138,12 +207,97 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private void logPetBindingStatus(String imei, String remoteAddress) {
         if (imei == null || imei.isBlank()) {
-            log.warn("GPS V41 message missing terminalId remote={}", remoteAddress);
+            log.warn("GPS message missing terminalId/IMEI remote={}", remoteAddress);
             return;
         }
 
         boolean knownPet = petRepository.findByImei(imei).isPresent();
-        log.info("GPS V41 terminal binding remote={} imei={} knownPet={}", remoteAddress, imei, knownPet);
+        log.info("GPS terminal binding remote={} imei={} knownPet={}", remoteAddress, imei, knownPet);
+    }
+
+    private void persistDecodedLocation(
+            String protocol,
+            String imei,
+            double lat,
+            double lon,
+            Instant instant,
+            boolean gpsValid,
+            String remoteAddress,
+            String context
+    ) {
+        LocalDateTime timestamp = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+        Optional<Pet> petOpt = petRepository.findByImei(imei);
+        if (petOpt.isEmpty()) {
+            log.warn("GPS {} location for unknown IMEI={} remote={} lat={} lon={} context='{}'. Skipping persist.",
+                    protocol, imei, remoteAddress, lat, lon, context);
+            return;
+        }
+
+        Pet pet = petOpt.get();
+        log.info("Matched GPS {} IMEI={} to pet id={} remote={}", protocol, imei, pet.getId(), remoteAddress);
+
+        Location loc = Location.builder()
+                .pet(pet)
+                .timestamp(timestamp)
+                .latitude(lat)
+                .longitude(lon)
+                .build();
+
+        locationService.save(loc);
+        log.info("Persisted GPS {} location petId={} imei={} lat={} lon={} timestamp={} gpsValid={} remote={}",
+                protocol, pet.getId(), imei, lat, lon, timestamp, gpsValid, remoteAddress);
+    }
+
+    private String payloadCommand(String payload) {
+        int commaIndex = payload.indexOf(',');
+        return commaIndex < 0 ? payload : payload.substring(0, commaIndex);
+    }
+
+    private String extractImei(String payload) {
+        Matcher matcher = IMEI_PATTERN.matcher(payload);
+        return matcher.find() ? matcher.group() : null;
+    }
+
+    private Coordinates extractCoordinates(String payload) {
+        String[] tokens = payload.split(",");
+        for (int i = 0; i <= tokens.length - 4; i++) {
+            Double lat = parseDouble(tokens[i]);
+            String latHemisphere = tokens[i + 1].trim();
+            Double lon = parseDouble(tokens[i + 2]);
+            String lonHemisphere = tokens[i + 3].trim();
+
+            if (lat == null || lon == null || !isHemisphere(latHemisphere, "NS") || !isHemisphere(lonHemisphere, "EW")) {
+                continue;
+            }
+
+            if (lat > 90 || lon > 180) {
+                continue;
+            }
+
+            if ("S".equalsIgnoreCase(latHemisphere)) {
+                lat = -lat;
+            }
+            if ("W".equalsIgnoreCase(lonHemisphere)) {
+                lon = -lon;
+            }
+
+            log.info("GPS ASCII coordinates extracted lat={} lon={} from payload='{}'", lat, lon, sanitizeForLog(payload));
+            return new Coordinates(lat, lon);
+        }
+
+        return null;
+    }
+
+    private Double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private boolean isHemisphere(String value, String allowedValues) {
+        return value.length() == 1 && allowedValues.toLowerCase().contains(value.toLowerCase());
     }
 
     @Override
@@ -157,5 +311,12 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             return hex;
         }
         return hex.substring(0, MAX_HEX_LOG_LENGTH) + "...(truncated," + hex.length() + " hex chars)";
+    }
+
+    private String sanitizeForLog(String value) {
+        return value.replace("\r", "\\r").replace("\n", "\\n");
+    }
+
+    private record Coordinates(double latitude, double longitude) {
     }
 }
