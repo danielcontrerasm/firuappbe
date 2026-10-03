@@ -25,20 +25,26 @@ public class PetService {
     );
 
     private final PetRepository petRepository;
+    private final GpsIngestionService gpsIngestionService;
     @Autowired
     private LostPetNotificationService lostPetNotificationService;
 
-    public PetService(PetRepository petRepository) {
+    public PetService(PetRepository petRepository, GpsIngestionService gpsIngestionService) {
         this.petRepository = petRepository;
+        this.gpsIngestionService = gpsIngestionService;
     }
 
     public Pet create(Pet p) {
-        return petRepository.save(p);
+        Pet saved = petRepository.save(p);
+        gpsIngestionService.evictPetCache(saved.getImei());
+        return saved;
     }
 
     public Pet create(Pet pet, MultipartFile image) {
         setImageIfPresent(pet, image);
-        return petRepository.save(pet);
+        Pet saved = petRepository.save(pet);
+        gpsIngestionService.evictPetCache(saved.getImei());
+        return saved;
     }
 
     public List<Pet> listForUser(User user) {
@@ -65,12 +71,16 @@ public class PetService {
     }
 
     public Pet update(Pet p) {
-        return petRepository.save(p);
+        Pet saved = petRepository.save(p);
+        gpsIngestionService.evictPetCache(saved.getImei());
+        return saved;
     }
 
     public Pet update(Pet pet, MultipartFile image) {
         setImageIfPresent(pet, image);
-        return petRepository.save(pet);
+        Pet saved = petRepository.save(pet);
+        gpsIngestionService.evictPetCache(saved.getImei());
+        return saved;
     }
 
     private void setImageIfPresent(Pet pet, MultipartFile image) {
@@ -101,7 +111,11 @@ public class PetService {
     }
 
     public void delete(Long id) {
+        Pet pet = petRepository.findById(id).orElse(null);
         petRepository.deleteById(id);
+        if (pet != null) {
+            gpsIngestionService.evictPetCache(pet.getImei());
+        }
     }
     // ... existing code ...
 

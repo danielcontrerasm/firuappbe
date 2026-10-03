@@ -1,13 +1,10 @@
 // com.example.pettracker.gps.GpsMessageHandler
 package com.example.pettracker.gps;
 
-import com.example.pettracker.entity.Location;
-import com.example.pettracker.entity.Pet;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.DecodeResult;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.GpsPosition;
-import com.example.pettracker.repository.PetRepository;
-import com.example.pettracker.service.LocationService;
+import com.example.pettracker.service.GpsIngestionService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.util.AttributeKey;
@@ -22,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -39,8 +35,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static final AttributeKey<String> DEVICE_IMEI = AttributeKey.valueOf("gps.device.imei");
     private static final Pattern IMEI_PATTERN = Pattern.compile("\\b\\d{14,17}\\b");
 
-    private final LocationService locationService;
-    private final PetRepository petRepository;
+    private final GpsIngestionService gpsIngestionService;
     private final V41ProtocolDecoder v41ProtocolDecoder = new V41ProtocolDecoder();
 
     @Override
@@ -89,7 +84,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             if (result.getPosition() == null) {
                 log.info("GPS V41 message has no location payload remote={} messageType={} terminalId={} sequence={}",
                         remoteAddress, result.getMessageType(), result.getTerminalId(), result.getSequence());
-                logPetBindingStatus(result.getTerminalId(), remoteAddress);
                 return;
             }
 
@@ -143,8 +137,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     sanitizeForLog(payload),
                     effectiveImei);
 
-            logPetBindingStatus(effectiveImei, remoteAddress);
-
             Coordinates coordinates = extractCoordinates(payload);
             if (coordinates == null) {
                 log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
@@ -152,7 +144,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 return;
             }
 
-            persistDecodedLocation(
+            enqueueDecodedLocation(
                     "ASCII_BRACKET",
                     effectiveImei,
                     coordinates.latitude(),
@@ -197,7 +189,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     position.getAlarm(),
                     position.getAdditionalFields());
 
-            persistDecodedLocation("V41", imei, lat, lon, instant, position.isGpsValid(), remoteAddress, position.toString());
+            enqueueDecodedLocation("V41", imei, lat, lon, instant, position.isGpsValid(), remoteAddress, position.toString());
             //producer.sendLocation(imei, lat, lon, ts);
         } catch (Exception ex) {
             log.warn("Failed to persist GPS V41 location remote={} imei={} position={}: {}",
@@ -205,17 +197,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
-    private void logPetBindingStatus(String imei, String remoteAddress) {
-        if (imei == null || imei.isBlank()) {
-            log.warn("GPS message missing terminalId/IMEI remote={}", remoteAddress);
-            return;
-        }
-
-        boolean knownPet = petRepository.findByImei(imei).isPresent();
-        log.info("GPS terminal binding remote={} imei={} knownPet={}", remoteAddress, imei, knownPet);
-    }
-
-    private void persistDecodedLocation(
+    private void enqueueDecodedLocation(
             String protocol,
             String imei,
             double lat,
@@ -225,27 +207,9 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String remoteAddress,
             String context
     ) {
-        LocalDateTime timestamp = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
-        Optional<Pet> petOpt = petRepository.findByImei(imei);
-        if (petOpt.isEmpty()) {
-            log.warn("GPS {} location for unknown IMEI={} remote={} lat={} lon={} context='{}'. Skipping persist.",
-                    protocol, imei, remoteAddress, lat, lon, context);
-            return;
-        }
-
-        Pet pet = petOpt.get();
-        log.info("Matched GPS {} IMEI={} to pet id={} remote={}", protocol, imei, pet.getId(), remoteAddress);
-
-        Location loc = Location.builder()
-                .pet(pet)
-                .timestamp(timestamp)
-                .latitude(lat)
-                .longitude(lon)
-                .build();
-
-        locationService.save(loc);
-        log.info("Persisted GPS {} location petId={} imei={} lat={} lon={} timestamp={} gpsValid={} remote={}",
-                protocol, pet.getId(), imei, lat, lon, timestamp, gpsValid, remoteAddress);
+        log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} remote={} context='{}'",
+                protocol, imei, lat, lon, LocalDateTime.ofInstant(instant, ZoneOffset.UTC), gpsValid, remoteAddress, context);
+        gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, remoteAddress, context);
     }
 
     private String payloadCommand(String payload) {

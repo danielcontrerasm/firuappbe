@@ -5,9 +5,7 @@ import com.example.pettracker.dto.AuthDTOs.RegisterRequest;
 import com.example.pettracker.dto.AuthDTOs.TokenResponse;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.security.JwtProvider;
-import com.example.pettracker.service.LoginDemoDataService;
 import com.example.pettracker.service.UserService;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,23 +16,19 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/auth")
-@Slf4j
 public class AuthController {
 
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
-    private final LoginDemoDataService loginDemoDataService;
 
     public AuthController(
             UserService userService,
             PasswordEncoder passwordEncoder,
-            JwtProvider jwtProvider,
-            LoginDemoDataService loginDemoDataService) {
+            JwtProvider jwtProvider) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
-        this.loginDemoDataService = loginDemoDataService;
     }
 
     @PostMapping("/register")
@@ -63,12 +57,6 @@ public class AuthController {
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid credentials");
-        }
-
-        try {
-            loginDemoDataService.seedForLogin(user);
-        } catch (RuntimeException e) {
-            log.warn("Login demo data seeding failed for user {}", user.getEmail(), e);
         }
 
         return new TokenResponse(jwtProvider.generateToken(user.getEmail()));
