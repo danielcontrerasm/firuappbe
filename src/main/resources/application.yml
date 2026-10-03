@@ -66,4 +66,5 @@ notifications:
     from: ${NOTIFICATIONS_EMAIL_FROM:}
 
 server:
-  port: ${PORT:8080}
+  # Hardcoded: Railway injects PORT=5000, which is reserved for GpsTcpServer (raw TCP GPS frames).
+  port: 8080
