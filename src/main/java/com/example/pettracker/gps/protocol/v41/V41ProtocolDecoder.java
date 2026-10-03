@@ -371,13 +371,8 @@ public class V41ProtocolDecoder {
         boolean south = (status & (1L << 2)) != 0;
         boolean west = (status & (1L << 3)) != 0;
 
-        if (south) {
-            latitude = -latitude;
-        }
-
-        if (west) {
-            longitude = -longitude;
-        }
+        latitude = south ? -Math.abs(latitude) : Math.abs(latitude);
+        longitude = west ? -Math.abs(longitude) : Math.abs(longitude);
         log.debug("V41 location decodedCoordinates latitude={} longitude={} south={} west={}",
                 latitude, longitude, south, west);
 

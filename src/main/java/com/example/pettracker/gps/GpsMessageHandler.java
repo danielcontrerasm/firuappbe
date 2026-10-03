@@ -273,16 +273,12 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 continue;
             }
 
-            if (lat > 90 || lon > 180) {
+            if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
                 continue;
             }
 
-            if ("S".equalsIgnoreCase(latHemisphere)) {
-                lat = -lat;
-            }
-            if ("W".equalsIgnoreCase(lonHemisphere)) {
-                lon = -lon;
-            }
+            lat = "S".equalsIgnoreCase(latHemisphere) ? -Math.abs(lat) : Math.abs(lat);
+            lon = "W".equalsIgnoreCase(lonHemisphere) ? -Math.abs(lon) : Math.abs(lon);
 
             log.info("GPS ASCII coordinates extracted lat={} lon={} from payload='{}'", lat, lon, sanitizeForLog(payload));
             return new Coordinates(lat, lon);
