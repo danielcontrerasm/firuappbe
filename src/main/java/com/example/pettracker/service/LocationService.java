@@ -6,6 +6,7 @@ import com.example.pettracker.entity.Location;
 import com.example.pettracker.mapper.LocationMapper;
 import com.example.pettracker.repository.LocationRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,16 +33,19 @@ public class LocationService {
        return  locationMapper.toDto(gpsIngestionService.processGpsUpdate(l));
     }
 
+    @Transactional(readOnly = true)
     public List<LocationDTO> getByPetId(Long petId) {
         return locationRepository.findFirstByPetIdOrderByTimestampDesc(petId).stream().map(locationMapper::toDto)
                 .toList();
 
     }
 
+    @Transactional(readOnly = true)
     public Location getLatestByPetId(Long petId) {
         return locationRepository.findTopByPetIdOrderByTimestampDesc(petId).orElse(null);
     }
 
+    @Transactional(readOnly = true)
     public PetNeighborhoodDto getNeighborhoodByPetId(Long petId) {
         Location latestLocation = getLatestByPetId(petId);
         if (latestLocation == null) {
@@ -50,6 +54,7 @@ public class LocationService {
         return neighborhoodLookupService.resolveNeighborhood(latestLocation);
     }
 
+    @Transactional(readOnly = true)
     public List<LocationDTO> findAll() {
         return locationRepository.findLastLocationsForAllPets()
                 .stream()
@@ -57,6 +62,7 @@ public class LocationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<LocationDTO> findLastLocationsByUserId(Long userId) {
         return locationRepository.findLastLocationsByUserId(userId)
                 .stream()
@@ -64,6 +70,7 @@ public class LocationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<LocationDTO> getPetRouteLast3Hours(Long petId) {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(3);
         return locationRepository.findPetRouteLast3Hours(petId, cutoff)
