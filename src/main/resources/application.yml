@@ -65,5 +65,9 @@ notifications:
   email:
     from: ${NOTIFICATIONS_EMAIL_FROM:}
 
+gps:
+  listener:
+    port: 5000
+
 server:
-  port: ${PORT:8080}
+  port: 8080

@@ -45,7 +45,8 @@ You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps
 
 ### Railway behavior in this repo
 
-- HTTP port uses Railway's injected `PORT`.
+- HTTP/Tomcat port is fixed at `8080`.
+- GPS TCP listener uses port `5000`.
 - If Railway injects `DATABASE_URL`, `DATABASE_PRIVATE_URL`, or `DATABASE_PUBLIC_URL`, the app converts it to a JDBC URL automatically.
 - Railway deployments now fail fast if `JWT_SECRET` is missing or still using the development fallback.
 
