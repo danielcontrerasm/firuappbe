@@ -5,6 +5,8 @@ public record LocationDTO(
         Long petId,
         double latitude,
         double longitude,
+        Integer batteryPercent,
+        Double batteryVoltage,
         String petName,
         String timestamp
 ) {}

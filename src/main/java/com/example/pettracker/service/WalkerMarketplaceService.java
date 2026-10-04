@@ -29,8 +29,12 @@ import com.example.pettracker.repository.WalkMessageRepository;
 import com.example.pettracker.repository.WalkRequestRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -40,6 +44,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @Slf4j
 public class WalkerMarketplaceService {
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int DEFAULT_POSITION_PAGE_SIZE = 500;
+    private static final int MAX_PAGE_SIZE = 200;
+    private static final int MAX_POSITION_PAGE_SIZE = 2_000;
 
     private final DogWalkerProfileRepository dogWalkerProfileRepository;
     private final WalkRequestRepository walkRequestRepository;
@@ -74,8 +82,16 @@ public class WalkerMarketplaceService {
 
     @Transactional(readOnly = true)
     public List<WalkerCardResponse> listPublicWalkers() {
+        return listPublicWalkers(0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalkerCardResponse> listPublicWalkers(int page, int size) {
         return dogWalkerProfileRepository
-                .findByApprovalStatusAndActiveTrueOrderByCreatedAtDesc(DogWalkerProfile.ApprovalStatus.APPROVED)
+                .findByApprovalStatusAndActiveTrueOrderByCreatedAtDesc(
+                        DogWalkerProfile.ApprovalStatus.APPROVED,
+                        pageRequest(page, size, MAX_PAGE_SIZE)
+                )
                 .stream()
                 .map(this::toWalkerCard)
                 .toList();
@@ -83,17 +99,23 @@ public class WalkerMarketplaceService {
 
     @Transactional(readOnly = true)
     public List<WalkerCardResponse> listAllWalkers() {
-        return dogWalkerProfileRepository.findAllByOrderByCreatedAtDesc().stream()
+        return listAllWalkers(0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalkerCardResponse> listAllWalkers(int page, int size) {
+        return dogWalkerProfileRepository.findAllByOrderByCreatedAtDesc(pageRequest(page, size, MAX_PAGE_SIZE)).stream()
                 .map(this::toWalkerCard)
                 .toList();
     }
 
     public WalkerCardResponse createWalkerApplication(WalkerApplicationRequest request) {
-        validateNewUser(request.getEmail(), request.getPassword());
+        String email = normalizeEmail(request.getEmail());
+        validateNewUser(email, request.getPassword());
 
         User user = userRepository.save(User.builder()
                 .name(request.getName())
-                .email(request.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .role(User.Role.WALKER)
@@ -118,11 +140,12 @@ public class WalkerMarketplaceService {
     }
 
     public WalkerCardResponse createWalkerByAdmin(AdminWalkerUpsertRequest request) {
-        validateNewUser(request.getEmail(), request.getPassword());
+        String email = normalizeEmail(request.getEmail());
+        validateNewUser(email, request.getPassword());
 
         User user = userRepository.save(User.builder()
                 .name(request.getName())
-                .email(request.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .role(User.Role.WALKER)
@@ -154,12 +177,14 @@ public class WalkerMarketplaceService {
         if (request.getName() != null && !request.getName().isBlank()) {
             user.setName(request.getName());
         }
-        if (request.getEmail() != null && !request.getEmail().isBlank()
-                && !request.getEmail().equalsIgnoreCase(user.getEmail())) {
-            userRepository.findByEmail(request.getEmail()).ifPresent(existing -> {
-                throw new RuntimeException("User already exists with email: " + request.getEmail());
-            });
-            user.setEmail(request.getEmail());
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String email = normalizeEmail(request.getEmail());
+            if (!email.equalsIgnoreCase(user.getEmail())) {
+                userRepository.findByEmail(email).ifPresent(existing -> {
+                    throw new RuntimeException("User already exists with email: " + email);
+                });
+                user.setEmail(email);
+            }
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
@@ -259,15 +284,25 @@ public class WalkerMarketplaceService {
 
     @Transactional(readOnly = true)
     public List<WalkRequestResponse> listMyWalkRequests(Authentication authentication) {
+        return listMyWalkRequests(authentication, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalkRequestResponse> listMyWalkRequests(Authentication authentication, int page, int size) {
         User current = currentUserService.require(authentication);
+        List<WalkRequest> requests;
         if (current.getRole() == User.Role.WALKER) {
-            return walkRequestRepository.findByWalkerProfileUserIdOrderByCreatedAtDesc(current.getId()).stream()
-                    .map(this::toWalkRequestResponse)
-                    .toList();
+            requests = walkRequestRepository.findByWalkerProfileUserIdOrderByCreatedAtDesc(
+                    current.getId(),
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
+        } else {
+            requests = walkRequestRepository.findByOwnerIdOrderByCreatedAtDesc(
+                    current.getId(),
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
         }
-        return walkRequestRepository.findByOwnerIdOrderByCreatedAtDesc(current.getId()).stream()
-                .map(this::toWalkRequestResponse)
-                .toList();
+        return toWalkRequestResponses(requests);
     }
 
     @Transactional(readOnly = true)
@@ -328,10 +363,19 @@ public class WalkerMarketplaceService {
 
     @Transactional(readOnly = true)
     public List<WalkMessageResponse> listMessages(Authentication authentication, Long walkRequestId) {
+        return listMessages(authentication, walkRequestId, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalkMessageResponse> listMessages(Authentication authentication, Long walkRequestId, int page, int size) {
         User current = currentUserService.require(authentication);
         WalkRequest walkRequest = findWalkRequest(walkRequestId);
         assertRequestAccess(current, walkRequest);
-        return walkMessageRepository.findByWalkRequestIdOrderByCreatedAtAsc(walkRequestId).stream()
+        return walkMessageRepository.findByWalkRequestIdOrderByCreatedAtAsc(
+                        walkRequestId,
+                        pageRequest(page, size, MAX_PAGE_SIZE)
+                )
+                .stream()
                 .map(this::toWalkMessageResponse)
                 .toList();
     }
@@ -424,37 +468,70 @@ public class WalkerMarketplaceService {
 
     @Transactional(readOnly = true)
     public List<DogWalkResponse> listMyDogWalks(Authentication authentication) {
+        return listMyDogWalks(authentication, 0, DEFAULT_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DogWalkResponse> listMyDogWalks(Authentication authentication, int page, int size) {
         User current = currentUserService.require(authentication);
+        List<DogWalk> dogWalks;
         if (current.getRole() == User.Role.WALKER) {
-            return dogWalkRepository.findByWalkerProfileUserIdOrderByStartedAtDesc(current.getId()).stream()
-                    .map(this::toDogWalkResponse)
-                    .toList();
+            dogWalks = dogWalkRepository.findByWalkerProfileUserIdOrderByStartedAtDesc(
+                    current.getId(),
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
+        } else {
+            dogWalks = dogWalkRepository.findByOwnerIdOrderByStartedAtDesc(
+                    current.getId(),
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
         }
-        return dogWalkRepository.findByOwnerIdOrderByStartedAtDesc(current.getId()).stream()
-                .map(this::toDogWalkResponse)
-                .toList();
+        return toDogWalkResponses(dogWalks);
     }
 
     @Transactional(readOnly = true)
     public List<WalkPositionResponse> listWalkPositions(Authentication authentication, Long dogWalkId) {
+        return listWalkPositions(authentication, dogWalkId, 0, DEFAULT_POSITION_PAGE_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalkPositionResponse> listWalkPositions(Authentication authentication, Long dogWalkId, int page, int size) {
         User current = currentUserService.require(authentication);
         DogWalk dogWalk = findDogWalk(dogWalkId);
         assertDogWalkAccess(current, dogWalk);
-        return dogWalkPositionRepository.findByDogWalkIdOrderByRecordedAtAsc(dogWalkId).stream()
+        return dogWalkPositionRepository.findByDogWalkIdOrderByRecordedAtAsc(
+                        dogWalkId,
+                        pageRequest(page, size, MAX_POSITION_PAGE_SIZE)
+                )
+                .stream()
                 .map(this::toWalkPositionResponse)
                 .toList();
     }
 
+    private PageRequest pageRequest(int page, int size, int maxSize) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), maxSize);
+        return PageRequest.of(safePage, safeSize);
+    }
+
     private void validateNewUser(String email, String password) {
-        if (email == null || email.isBlank()) {
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail.isBlank()) {
             throw new RuntimeException("Email is required");
         }
         if (password == null || password.isBlank()) {
             throw new RuntimeException("Password is required");
         }
-        userRepository.findByEmail(email).ifPresent(existing -> {
-            throw new RuntimeException("User already exists with email: " + email);
+        userRepository.findByEmail(normalizedEmail).ifPresent(existing -> {
+            throw new RuntimeException("User already exists with email: " + normalizedEmail);
         });
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            throw new RuntimeException("Email is required");
+        }
+        return email.trim().toLowerCase();
     }
 
     private DogWalkerProfile findWalkerProfile(Long walkerProfileId) {
@@ -544,10 +621,37 @@ public class WalkerMarketplaceService {
         );
     }
 
+    private List<WalkRequestResponse> toWalkRequestResponses(List<WalkRequest> walkRequests) {
+        if (walkRequests.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> walkRequestIds = walkRequests.stream()
+                .map(WalkRequest::getId)
+                .toList();
+        Map<Long, Long> activeDogWalkIdsByRequestId = dogWalkRepository.findByWalkRequestIdIn(walkRequestIds).stream()
+                .collect(Collectors.toMap(
+                        dogWalk -> dogWalk.getWalkRequest().getId(),
+                        DogWalk::getId,
+                        (first, second) -> first
+                ));
+
+        return walkRequests.stream()
+                .map(walkRequest -> toWalkRequestResponse(walkRequest, activeDogWalkIdsByRequestId))
+                .toList();
+    }
+
     private WalkRequestResponse toWalkRequestResponse(WalkRequest walkRequest) {
-        Long activeDogWalkId = dogWalkRepository.findByWalkRequestId(walkRequest.getId())
-                .map(DogWalk::getId)
-                .orElse(null);
+        return toWalkRequestResponse(
+                walkRequest,
+                dogWalkRepository.findByWalkRequestId(walkRequest.getId())
+                        .map(dogWalk -> Map.of(walkRequest.getId(), dogWalk.getId()))
+                        .orElseGet(Map::of)
+        );
+    }
+
+    private WalkRequestResponse toWalkRequestResponse(WalkRequest walkRequest, Map<Long, Long> activeDogWalkIdsByRequestId) {
+        Long activeDogWalkId = activeDogWalkIdsByRequestId.get(walkRequest.getId());
         return new WalkRequestResponse(
                 walkRequest.getId(),
                 walkRequest.getWalkerProfile().getId(),
@@ -581,6 +685,35 @@ public class WalkerMarketplaceService {
     }
 
     private DogWalkResponse toDogWalkResponse(DogWalk dogWalk) {
+        return toDogWalkResponse(
+                dogWalk,
+                dogWalkPositionRepository.findTopByDogWalkIdOrderByRecordedAtDesc(dogWalk.getId())
+                        .map(position -> Map.of(dogWalk.getId(), position))
+                        .orElseGet(Map::of)
+        );
+    }
+
+    private List<DogWalkResponse> toDogWalkResponses(List<DogWalk> dogWalks) {
+        if (dogWalks.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> dogWalkIds = dogWalks.stream()
+                .map(DogWalk::getId)
+                .toList();
+        Map<Long, DogWalkPosition> latestPositionsByWalkId = dogWalkPositionRepository.findLatestByDogWalkIds(dogWalkIds).stream()
+                .collect(Collectors.toMap(
+                        position -> position.getDogWalk().getId(),
+                        Function.identity(),
+                        (first, second) -> first
+                ));
+
+        return dogWalks.stream()
+                .map(dogWalk -> toDogWalkResponse(dogWalk, latestPositionsByWalkId))
+                .toList();
+    }
+
+    private DogWalkResponse toDogWalkResponse(DogWalk dogWalk, Map<Long, DogWalkPosition> latestPositionsByWalkId) {
         return new DogWalkResponse(
                 dogWalk.getId(),
                 dogWalk.getWalkRequest().getId(),
@@ -594,7 +727,7 @@ public class WalkerMarketplaceService {
                 dogWalk.getStartedAt(),
                 dogWalk.getCompletedAt(),
                 dogWalk.getStatus(),
-                dogWalkPositionRepository.findTopByDogWalkIdOrderByRecordedAtDesc(dogWalk.getId())
+                Optional.ofNullable(latestPositionsByWalkId.get(dogWalk.getId()))
                         .map(this::toWalkPositionResponse)
                         .orElse(null)
         );

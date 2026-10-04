@@ -5,70 +5,50 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.repository.LocationRepository;
 import com.example.pettracker.repository.PetRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
-// Self explanatory code
-// avoid magic numbers
-// use descriptive booleans
-// use meaningful names
-// avoid deep nesting
-// one function one responsibility
-// KISS DRY
-// use proper name methods and
-// use final for constants
-// make small methods
 
 @Service
 @Slf4j
 public class GpsIngestionService {
 
-    private static final int GPS_CORE_THREADS = 2;
-    private static final int GPS_MAX_THREADS = 4;
-    private static final int GPS_QUEUE_CAPACITY = 500;
     private static final long PET_CACHE_TTL_MILLIS = TimeUnit.MINUTES.toMillis(10);
     private static final long UNKNOWN_IMEI_CACHE_TTL_MILLIS = TimeUnit.MINUTES.toMillis(1);
 
     private final LocationRepository locationRepository;
     private final PetRepository petRepository;
     private final GeofencingService geofencingService;
+    private final Executor gpsExecutor;
     private final Map<String, CachedPetLookup> petByImeiCache = new ConcurrentHashMap<>();
     
     public GpsIngestionService(
             LocationRepository locationRepository,
             PetRepository petRepository,
-            GeofencingService geofencingService) {
+            GeofencingService geofencingService,
+            @Qualifier("gpsExecutor") Executor gpsExecutor) {
         this.locationRepository = locationRepository;
         this.petRepository = petRepository;
         this.geofencingService = geofencingService;
+        this.gpsExecutor = gpsExecutor;
     }
 
-    private final ExecutorService gpsExecutor = new ThreadPoolExecutor(
-            GPS_CORE_THREADS,
-            GPS_MAX_THREADS,
-            30,
-            TimeUnit.SECONDS,
-            new ArrayBlockingQueue<>(GPS_QUEUE_CAPACITY),
-            new ThreadPoolExecutor.AbortPolicy()
-    );
-
+    @Transactional
     public Location processGpsUpdate(Location l) {
-        submitGpsTask("location-pet-" + (l.getPet() == null ? "unknown" : l.getPet().getId()), () -> {
-            Location savedLocation = saveToDatabase(l);
-            geofencingService.checkAndAlert(savedLocation);
-            geofencingService.checkGeofence(savedLocation);
-        });
-        return l;
+        Location savedLocation = saveToDatabase(l);
+        geofencingService.checkAndAlert(savedLocation);
+        geofencingService.checkGeofence(savedLocation);
+        return savedLocation;
     }
 
     public void processDecodedLocation(
@@ -78,6 +58,21 @@ public class GpsIngestionService {
             double longitude,
             Instant instant,
             boolean gpsValid,
+            String remoteAddress,
+            String context
+    ) {
+        processDecodedLocation(protocol, imei, latitude, longitude, instant, gpsValid, null, null, remoteAddress, context);
+    }
+
+    public void processDecodedLocation(
+            String protocol,
+            String imei,
+            double latitude,
+            double longitude,
+            Instant instant,
+            boolean gpsValid,
+            Integer batteryPercent,
+            Double batteryVoltage,
             String remoteAddress,
             String context
     ) {
@@ -101,11 +96,13 @@ public class GpsIngestionService {
                     .timestamp(timestamp)
                     .latitude(latitude)
                     .longitude(longitude)
+                    .batteryPercent(batteryPercent)
+                    .batteryVoltage(batteryVoltage)
                     .build();
 
             Location savedLocation = saveToDatabase(location);
-            log.info("Persisted GPS {} location petId={} petName={} imei={} lat={} lon={} timestamp={} gpsValid={} remote={}",
-                    protocol, pet.petId(), pet.petName(), imei, latitude, longitude, timestamp, gpsValid, remoteAddress);
+            log.info("Persisted GPS {} location petId={} petName={} imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={}",
+                    protocol, pet.petId(), pet.petName(), imei, latitude, longitude, timestamp, gpsValid, batteryPercent, batteryVoltage, remoteAddress);
             geofencingService.checkAndAlert(savedLocation);
             geofencingService.checkGeofence(savedLocation);
         });
@@ -148,14 +145,14 @@ public class GpsIngestionService {
 
     private void submitGpsTask(String taskName, Runnable task) {
         try {
-            gpsExecutor.submit(() -> {
+            gpsExecutor.execute(() -> {
                 try {
                     task.run();
                 } catch (RuntimeException ex) {
                     log.warn("GPS async task failed task={}: {}", taskName, ex.getMessage(), ex);
                 }
             });
-        } catch (RejectedExecutionException ex) {
+        } catch (TaskRejectedException ex) {
             log.warn("GPS async queue full. Dropping task={}", taskName, ex);
         }
     }

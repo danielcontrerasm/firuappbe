@@ -6,14 +6,15 @@ import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.repository.GeofenceRepository;
 import com.example.pettracker.repository.PetRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.io.WKTReader;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class GeofencingService {
 
     private final GeofenceRepository geofenceRepository;
@@ -79,8 +80,10 @@ public class GeofencingService {
                         "Alert: Your pet " + pet.getName() + " left its geofence. " + metadata);
 
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (RuntimeException ex) {
+            Long petId = location.getPet() == null ? null : location.getPet().getId();
+            log.warn("Failed to evaluate geofence alert petId={} lat={} lon={}: {}",
+                    petId, location.getLatitude(), location.getLongitude(), ex.getMessage(), ex);
         }
     }
 

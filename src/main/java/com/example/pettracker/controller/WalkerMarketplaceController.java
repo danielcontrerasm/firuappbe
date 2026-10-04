@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -38,8 +39,10 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/public/walkers")
-    public List<WalkerCardResponse> listPublicWalkers() {
-        return walkerMarketplaceService.listPublicWalkers();
+    public List<WalkerCardResponse> listPublicWalkers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return walkerMarketplaceService.listPublicWalkers(page, size);
     }
 
     @PostMapping("/walker-applications")
@@ -67,8 +70,11 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/walk-requests")
-    public List<WalkRequestResponse> listMyWalkRequests(Authentication authentication) {
-        return walkerMarketplaceService.listMyWalkRequests(authentication);
+    public List<WalkRequestResponse> listMyWalkRequests(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return walkerMarketplaceService.listMyWalkRequests(authentication, page, size);
     }
 
     @GetMapping("/walk-requests/{id}")
@@ -93,8 +99,12 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/walk-requests/{id}/messages")
-    public List<WalkMessageResponse> listMessages(Authentication authentication, @PathVariable Long id) {
-        return walkerMarketplaceService.listMessages(authentication, id);
+    public List<WalkMessageResponse> listMessages(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return walkerMarketplaceService.listMessages(authentication, id, page, size);
     }
 
     @PostMapping("/walk-requests/{id}/messages")
@@ -112,8 +122,11 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/dog-walks")
-    public List<DogWalkResponse> listDogWalks(Authentication authentication) {
-        return walkerMarketplaceService.listMyDogWalks(authentication);
+    public List<DogWalkResponse> listDogWalks(
+            Authentication authentication,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return walkerMarketplaceService.listMyDogWalks(authentication, page, size);
     }
 
     @GetMapping("/dog-walks/{id}")
@@ -122,8 +135,12 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/dog-walks/{id}/positions")
-    public List<WalkPositionResponse> listDogWalkPositions(Authentication authentication, @PathVariable Long id) {
-        return walkerMarketplaceService.listWalkPositions(authentication, id);
+    public List<WalkPositionResponse> listDogWalkPositions(
+            Authentication authentication,
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "500") int size) {
+        return walkerMarketplaceService.listWalkPositions(authentication, id, page, size);
     }
 
     @PostMapping("/dog-walks/{id}/positions")
@@ -141,8 +158,10 @@ public class WalkerMarketplaceController {
     }
 
     @GetMapping("/admin/walkers")
-    public List<WalkerCardResponse> listAllWalkers() {
-        return walkerMarketplaceService.listAllWalkers();
+    public List<WalkerCardResponse> listAllWalkers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return walkerMarketplaceService.listAllWalkers(page, size);
     }
 
     @PostMapping("/admin/walkers")

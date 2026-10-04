@@ -192,7 +192,18 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     position.getAlarm(),
                     position.getAdditionalFields());
 
-            enqueueDecodedLocation("V41", imei, lat, lon, instant, position.isGpsValid(), remoteAddress, position.toString());
+            enqueueDecodedLocation(
+                    "V41",
+                    imei,
+                    lat,
+                    lon,
+                    instant,
+                    position.isGpsValid(),
+                    position.getBattery(),
+                    position.getBatteryVoltage(),
+                    remoteAddress,
+                    position.toString()
+            );
             //producer.sendLocation(imei, lat, lon, ts);
         } catch (Exception ex) {
             log.warn("Failed to persist GPS V41 location remote={} imei={} position={}: {}",
@@ -210,9 +221,24 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String remoteAddress,
             String context
     ) {
-        log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} remote={} context='{}'",
-                protocol, imei, lat, lon, LocalDateTime.ofInstant(instant, ZoneOffset.UTC), gpsValid, remoteAddress, context);
-        gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, remoteAddress, context);
+        enqueueDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, null, null, remoteAddress, context);
+    }
+
+    private void enqueueDecodedLocation(
+            String protocol,
+            String imei,
+            double lat,
+            double lon,
+            Instant instant,
+            boolean gpsValid,
+            Integer batteryPercent,
+            Double batteryVoltage,
+            String remoteAddress,
+            String context
+    ) {
+        log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
+                protocol, imei, lat, lon, LocalDateTime.ofInstant(instant, ZoneOffset.UTC), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+        gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
     }
 
     private String payloadCommand(String payload) {

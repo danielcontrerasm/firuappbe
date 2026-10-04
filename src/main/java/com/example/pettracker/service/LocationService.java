@@ -5,6 +5,7 @@ import com.example.pettracker.dto.PetNeighborhoodDto;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.mapper.LocationMapper;
 import com.example.pettracker.repository.LocationRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,8 @@ import java.util.List;
 
 @Service
 public class LocationService {
+    private static final int DEFAULT_RECENT_LOCATION_LIMIT = 1;
+    private static final int DEFAULT_ROUTE_LIMIT = 720;
 
     private final LocationRepository locationRepository;
     private final GpsIngestionService gpsIngestionService;
@@ -35,7 +38,12 @@ public class LocationService {
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getByPetId(Long petId) {
-        return locationRepository.findFirstByPetIdOrderByTimestampDesc(petId).stream().map(locationMapper::toDto)
+        return locationRepository.findByPetIdOrderByTimestampDesc(
+                        petId,
+                        PageRequest.of(0, DEFAULT_RECENT_LOCATION_LIMIT)
+                )
+                .stream()
+                .map(locationMapper::toDto)
                 .toList();
 
     }
@@ -73,7 +81,11 @@ public class LocationService {
     @Transactional(readOnly = true)
     public List<LocationDTO> getPetRouteLast3Hours(Long petId) {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(3);
-        return locationRepository.findPetRouteLast3Hours(petId, cutoff)
+        return locationRepository.findPetRouteSince(
+                        petId,
+                        cutoff,
+                        PageRequest.of(0, DEFAULT_ROUTE_LIMIT)
+                )
                 .stream()
                 .map(locationMapper::toDto)
                 .toList();

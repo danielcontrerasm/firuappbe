@@ -284,6 +284,8 @@ public class PetController {
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .timestamp(request.getTimestamp() == null ? LocalDateTime.now() : request.getTimestamp())
+                .batteryPercent(request.getBatteryPercent())
+                .batteryVoltage(request.getBatteryVoltage())
                 .build();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(locationService.save(location));

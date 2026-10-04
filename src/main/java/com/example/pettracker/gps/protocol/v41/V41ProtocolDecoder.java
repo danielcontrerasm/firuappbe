@@ -727,6 +727,7 @@ public class V41ProtocolDecoder {
         private Double mileageKm;
         private Double fuelLiters;
         private Integer battery;
+        private Double batteryVoltage;
         private String lbsRaw;
         private String rawMessage;
         private final Map<String, String> additionalFields = new LinkedHashMap<>();
@@ -795,6 +796,10 @@ public class V41ProtocolDecoder {
             return battery;
         }
 
+        public Double getBatteryVoltage() {
+            return batteryVoltage;
+        }
+
         public String getLbsRaw() {
             return lbsRaw;
         }
@@ -819,6 +824,8 @@ public class V41ProtocolDecoder {
                     + ", altitude=" + altitude
                     + ", timestamp=" + timestamp
                     + ", gpsValid=" + gpsValid
+                    + ", battery=" + battery
+                    + ", batteryVoltage=" + batteryVoltage
                     + ", alarm='" + alarm + '\''
                     + '}';
         }
