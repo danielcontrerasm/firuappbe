@@ -37,6 +37,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        default_batch_fetch_size: ${HIBERNATE_DEFAULT_BATCH_FETCH_SIZE:50}
+        jdbc:
+          batch_size: ${HIBERNATE_JDBC_BATCH_SIZE:50}
+        order_inserts: true
+        order_updates: true
+        query:
+          in_clause_parameter_padding: true
 
 pettracker:
   security:
@@ -74,6 +81,10 @@ notifications:
 gps:
   listener:
     port: 5000
+  ingestion:
+    core-threads: ${GPS_INGESTION_CORE_THREADS:2}
+    max-threads: ${GPS_INGESTION_MAX_THREADS:4}
+    queue-capacity: ${GPS_INGESTION_QUEUE_CAPACITY:500}
 
 logging:
   level:
@@ -81,3 +92,11 @@ logging:
 
 server:
   port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/xml,text/plain,text/css,application/javascript
+    min-response-size: 1024
+  tomcat:
+    threads:
+      max: ${SERVER_TOMCAT_THREADS_MAX:200}
+      min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}

@@ -33,13 +33,14 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<TokenResponse> register(@RequestBody RegisterRequest request) {
-        userService.findByEmail(request.getEmail()).ifPresent(existing -> {
-            throw new RuntimeException("User already exists with email: " + request.getEmail());
+        String email = normalizeEmail(request.getEmail());
+        userService.findByEmail(email).ifPresent(existing -> {
+            throw new RuntimeException("User already exists with email: " + email);
         });
 
         User user = User.builder()
                 .name(request.getName())
-                .email(request.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .role(User.Role.USER)
@@ -52,7 +53,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public TokenResponse login(@RequestBody LoginRequest request) {
-        User user = userService.findByEmail(request.getEmail())
+        User user = userService.findByEmail(normalizeEmail(request.getEmail()))
                 .orElseThrow(() -> new RuntimeException("Invalid credentials"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -60,5 +61,12 @@ public class AuthController {
         }
 
         return new TokenResponse(jwtProvider.generateToken(user.getEmail()));
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            throw new RuntimeException("Email is required");
+        }
+        return email.trim().toLowerCase();
     }
 }
