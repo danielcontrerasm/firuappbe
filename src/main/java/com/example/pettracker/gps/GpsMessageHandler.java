@@ -4,6 +4,7 @@ package com.example.pettracker.gps;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.DecodeResult;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.GpsPosition;
+import com.example.pettracker.service.AppTimeService;
 import com.example.pettracker.service.GpsIngestionService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -18,8 +19,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +36,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static final Pattern IMEI_PATTERN = Pattern.compile("\\b\\d{14,17}\\b");
 
     private final GpsIngestionService gpsIngestionService;
+    private final AppTimeService appTimeService;
     private final V41ProtocolDecoder v41ProtocolDecoder = new V41ProtocolDecoder();
 
     @Override
@@ -185,7 +185,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     imei,
                     lat,
                     lon,
-                    LocalDateTime.ofInstant(instant, ZoneOffset.UTC),
+                    appTimeService.fromInstant(instant),
                     position.isGpsValid(),
                     position.getSpeed(),
                     position.getCourse(),
@@ -237,7 +237,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String context
     ) {
         log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
-                protocol, imei, lat, lon, LocalDateTime.ofInstant(instant, ZoneOffset.UTC), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+                protocol, imei, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
         gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
     }
 

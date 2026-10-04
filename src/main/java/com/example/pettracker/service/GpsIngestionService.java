@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,17 +29,20 @@ public class GpsIngestionService {
     private final PetRepository petRepository;
     private final GeofencingService geofencingService;
     private final Executor gpsExecutor;
+    private final AppTimeService appTimeService;
     private final Map<String, CachedPetLookup> petByImeiCache = new ConcurrentHashMap<>();
     
     public GpsIngestionService(
             LocationRepository locationRepository,
             PetRepository petRepository,
             GeofencingService geofencingService,
-            @Qualifier("gpsExecutor") Executor gpsExecutor) {
+            @Qualifier("gpsExecutor") Executor gpsExecutor,
+            AppTimeService appTimeService) {
         this.locationRepository = locationRepository;
         this.petRepository = petRepository;
         this.geofencingService = geofencingService;
         this.gpsExecutor = gpsExecutor;
+        this.appTimeService = appTimeService;
     }
 
     @Transactional
@@ -90,7 +92,7 @@ public class GpsIngestionService {
             }
 
             CachedPetLookup pet = cachedPet.get();
-            LocalDateTime timestamp = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+            LocalDateTime timestamp = appTimeService.fromInstant(instant);
             Location location = Location.builder()
                     .pet(Pet.builder().id(pet.petId()).build())
                     .timestamp(timestamp)

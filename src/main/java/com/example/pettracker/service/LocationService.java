@@ -21,15 +21,19 @@ public class LocationService {
     private final GpsIngestionService gpsIngestionService;
     private final LocationMapper locationMapper;
     private final NeighborhoodLookupService neighborhoodLookupService;
+    private final AppTimeService appTimeService;
+
     public LocationService(
             LocationRepository locationRepository,
             GpsIngestionService gpsIngestionService,
             LocationMapper locationMapper,
-            NeighborhoodLookupService neighborhoodLookupService) {
+            NeighborhoodLookupService neighborhoodLookupService,
+            AppTimeService appTimeService) {
         this.locationRepository = locationRepository;
         this.gpsIngestionService = gpsIngestionService;
         this.locationMapper = locationMapper;
         this.neighborhoodLookupService = neighborhoodLookupService;
+        this.appTimeService = appTimeService;
     }
 
     public LocationDTO save(Location l) {
@@ -80,7 +84,7 @@ public class LocationService {
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getPetRouteLast3Hours(Long petId) {
-        LocalDateTime cutoff = LocalDateTime.now().minusHours(3);
+        LocalDateTime cutoff = appTimeService.now().minusHours(3);
         return locationRepository.findPetRouteSince(
                         petId,
                         cutoff,
@@ -89,6 +93,10 @@ public class LocationService {
                 .stream()
                 .map(locationMapper::toDto)
                 .toList();
+    }
+
+    public LocalDateTime now() {
+        return appTimeService.now();
     }
 
 }

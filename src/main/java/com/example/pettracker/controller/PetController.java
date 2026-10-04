@@ -283,7 +283,7 @@ public class PetController {
                 .pet(pet)
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
-                .timestamp(request.getTimestamp() == null ? LocalDateTime.now() : request.getTimestamp())
+                .timestamp(request.getTimestamp() == null ? locationService.now() : request.getTimestamp())
                 .batteryPercent(request.getBatteryPercent())
                 .batteryVoltage(request.getBatteryVoltage())
                 .build();

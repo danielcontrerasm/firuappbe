@@ -46,6 +46,7 @@ spring:
           in_clause_parameter_padding: true
 
 pettracker:
+  time-zone: ${APP_TIME_ZONE:America/Bogota}
   security:
     default-jwt-secret: pettracker-local-development-secret-change-this-before-production-0123456789
   cors:
