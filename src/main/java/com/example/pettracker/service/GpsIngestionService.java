@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @Slf4j
@@ -30,6 +31,7 @@ public class GpsIngestionService {
     private final GeofencingService geofencingService;
     private final Executor gpsExecutor;
     private final AppTimeService appTimeService;
+    private final AtomicLong droppedTasks = new AtomicLong();
     private final Map<String, CachedPetLookup> petByImeiCache = new ConcurrentHashMap<>();
     
     public GpsIngestionService(
@@ -155,8 +157,13 @@ public class GpsIngestionService {
                 }
             });
         } catch (TaskRejectedException ex) {
+            droppedTasks.incrementAndGet();
             log.warn("GPS async queue full. Dropping task={}", taskName, ex);
         }
+    }
+
+    public long getDroppedTasks() {
+        return droppedTasks.get();
     }
 
     private Location saveToDatabase(Location l) {

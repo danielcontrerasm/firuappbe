@@ -37,7 +37,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private final GpsIngestionService gpsIngestionService;
     private final AppTimeService appTimeService;
-    private final V41ProtocolDecoder v41ProtocolDecoder = new V41ProtocolDecoder();
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
@@ -74,7 +73,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
 
         try {
-            DecodeResult result = v41ProtocolDecoder.decode(frame);
+            DecodeResult result = new V41ProtocolDecoder(appTimeService.zoneId()).decode(frame);
             log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",
                     remoteAddress,
                     result.getMessageType(),

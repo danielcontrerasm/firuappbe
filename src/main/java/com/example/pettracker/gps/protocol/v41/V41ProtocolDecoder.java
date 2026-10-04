@@ -8,7 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -32,6 +32,15 @@ public class V41ProtocolDecoder {
 
     private static final int FRAME_FLAG = 0x7E;
     private static final int MAX_HEX_LOG_LENGTH = 512;
+    private final ZoneId timestampZone;
+
+    public V41ProtocolDecoder() {
+        this(ZoneId.of("America/Bogota"));
+    }
+
+    public V41ProtocolDecoder(ZoneId timestampZone) {
+        this.timestampZone = timestampZone;
+    }
 
     private static final int MSG_HEARTBEAT = 0x0002;
     private static final int MSG_REGISTER = 0x0100;
@@ -599,7 +608,8 @@ public class V41ProtocolDecoder {
 
         try {
             return LocalDateTime.of(year, month, day, hour, minute, second)
-                    .toInstant(ZoneOffset.UTC);
+                    .atZone(timestampZone)
+                    .toInstant();
         } catch (DateTimeException ex) {
             log.warn("V41 invalid BCD datetime raw={} decoded={}-{}-{} {}:{}:{}",
                     ByteBufUtil.hexDump(data),
