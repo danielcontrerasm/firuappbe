@@ -66,7 +66,8 @@ public class V41ProtocolDecoder {
                 incoming.readerIndex(),
                 incomingBytes
         );
-        log.info("V41 decode started bytes={} rawHex={}", incomingBytes, truncateHex(rawHex));
+        // Expensive success-path log: raw frame hex can be large and is emitted for every GPS packet.
+        // log.info("V41 decode started bytes={} rawHex={}", incomingBytes, truncateHex(rawHex));
 
         ByteBuf frame = incoming.copy();
 
@@ -88,11 +89,13 @@ public class V41ProtocolDecoder {
             byte[] escapedPayload = new byte[payloadLength];
 
             frame.readBytes(escapedPayload);
-            log.debug("V41 escaped payload hex={}", truncateHex(ByteBufUtil.hexDump(escapedPayload)));
+            // Expensive debug log: hex-dumps every escaped payload even when debug is disabled.
+            // log.debug("V41 escaped payload hex={}", truncateHex(ByteBufUtil.hexDump(escapedPayload)));
 
             byte[] decodedPayload = unescape(escapedPayload);
-            log.debug("V41 unescaped payload length={} hex={}",
-                    decodedPayload.length, truncateHex(ByteBufUtil.hexDump(decodedPayload)));
+            // Expensive debug log: hex-dumps every decoded payload even when debug is disabled.
+            // log.debug("V41 unescaped payload length={} hex={}",
+            //         decodedPayload.length, truncateHex(ByteBufUtil.hexDump(decodedPayload)));
 
             if (decodedPayload.length < 6) {
                 log.warn("V41 decode rejected: payload too short length={} rawHex={}",
@@ -101,8 +104,9 @@ public class V41ProtocolDecoder {
             }
 
             validateChecksum(decodedPayload);
-            log.debug("V41 checksum valid calculated/received={}",
-                    String.format("%02X", decodedPayload[decodedPayload.length - 1] & 0xFF));
+            // Expensive debug log: formats checksum on every valid packet.
+            // log.debug("V41 checksum valid calculated/received={}",
+            //         String.format("%02X", decodedPayload[decodedPayload.length - 1] & 0xFF));
 
             ByteBuf data = Unpooled.wrappedBuffer(
                     decodedPayload,
@@ -111,14 +115,15 @@ public class V41ProtocolDecoder {
             );
 
             Jt808Header header = decodeHeader(data);
-            log.info("V41 header decoded messageId=0x{} messageType={} terminalId={} sequence={} bodyLength={} subPackage={} remainingBytes={}",
-                    String.format("%04X", header.messageId),
-                    messageType(header.messageId),
-                    header.terminalId,
-                    header.sequence,
-                    header.bodyLength,
-                    header.subPackage,
-                    data.readableBytes());
+            // Expensive success-path log: repeated for every decoded packet.
+            // log.info("V41 header decoded messageId=0x{} messageType={} terminalId={} sequence={} bodyLength={} subPackage={} remainingBytes={}",
+            //         String.format("%04X", header.messageId),
+            //         messageType(header.messageId),
+            //         header.terminalId,
+            //         header.sequence,
+            //         header.bodyLength,
+            //         header.subPackage,
+            //         data.readableBytes());
 
             DecodeResult result = new DecodeResult();
 
@@ -132,35 +137,39 @@ public class V41ProtocolDecoder {
                 case MSG_LOCATION -> {
                     result.messageType = "LOCATION";
                     result.position = decodeLocation(data, header, rawHex);
-                    log.info("V41 location decoded terminalId={} lat={} lon={} speed={} course={} altitude={} gpsValid={} accOn={} timestamp={} alarm={} additionalFields={}",
-                            result.position.getTerminalId(),
-                            result.position.getLatitude(),
-                            result.position.getLongitude(),
-                            result.position.getSpeed(),
-                            result.position.getCourse(),
-                            result.position.getAltitude(),
-                            result.position.isGpsValid(),
-                            result.position.isAccOn(),
-                            result.position.getTimestamp(),
-                            result.position.getAlarm(),
-                            result.position.getAdditionalFields());
+                    // Expensive success-path log: renders decoded positions and additional fields per location.
+                    // log.info("V41 location decoded terminalId={} lat={} lon={} speed={} course={} altitude={} gpsValid={} accOn={} timestamp={} alarm={} additionalFields={}",
+                    //         result.position.getTerminalId(),
+                    //         result.position.getLatitude(),
+                    //         result.position.getLongitude(),
+                    //         result.position.getSpeed(),
+                    //         result.position.getCourse(),
+                    //         result.position.getAltitude(),
+                    //         result.position.isGpsValid(),
+                    //         result.position.isAccOn(),
+                    //         result.position.getTimestamp(),
+                    //         result.position.getAlarm(),
+                    //         result.position.getAdditionalFields());
                 }
 
                 case MSG_HEARTBEAT -> {
                     result.messageType = "HEARTBEAT";
-                    log.info("V41 heartbeat received terminalId={} sequence={}", header.terminalId, header.sequence);
+                    // Expensive success-path log: heartbeats can be high-volume.
+                    // log.info("V41 heartbeat received terminalId={} sequence={}", header.terminalId, header.sequence);
                 }
 
                 case MSG_REGISTER -> {
                     result.messageType = "REGISTER";
-                    log.info("V41 register received terminalId={} sequence={} bodyBytes={}",
-                            header.terminalId, header.sequence, data.readableBytes());
+                    // Expensive success-path log: normal registration flow does not need per-packet info logs.
+                    // log.info("V41 register received terminalId={} sequence={} bodyBytes={}",
+                    //         header.terminalId, header.sequence, data.readableBytes());
                 }
 
                 case MSG_AUTHENTICATION -> {
                     result.messageType = "AUTHENTICATION";
-                    log.info("V41 authentication received terminalId={} sequence={} bodyBytes={}",
-                            header.terminalId, header.sequence, data.readableBytes());
+                    // Expensive success-path log: normal authentication flow does not need per-packet info logs.
+                    // log.info("V41 authentication received terminalId={} sequence={} bodyBytes={}",
+                    //         header.terminalId, header.sequence, data.readableBytes());
                 }
 
                 default -> {
@@ -177,7 +186,8 @@ public class V41ProtocolDecoder {
                 }
             }
 
-            log.info("V41 decode completed result={}", result);
+            // Expensive success-path log: DecodeResult.toString() includes nested position details.
+            // log.info("V41 decode completed result={}", result);
             return result;
 
         } finally {
@@ -286,7 +296,8 @@ public class V41ProtocolDecoder {
             );
         }
 
-        log.trace("V41 checksum valid value=0x{}", String.format("%02X", received));
+        // Expensive trace log: formats checksum on every valid packet.
+        // log.trace("V41 checksum valid value=0x{}", String.format("%02X", received));
     }
 
     private Jt808Header decodeHeader(ByteBuf buffer) {
@@ -305,12 +316,13 @@ public class V41ProtocolDecoder {
         String terminalId = decodeBcd(terminalBytes);
 
         int sequence = buffer.readUnsignedShort();
-        log.debug("V41 raw header messageId=0x{} messageProperties=0x{} terminalId={} sequence={} bodyLength={}",
-                String.format("%04X", messageId),
-                String.format("%04X", messageProperties),
-                terminalId,
-                sequence,
-                bodyLength);
+        // Expensive debug log: formats header fields on every packet.
+        // log.debug("V41 raw header messageId=0x{} messageProperties=0x{} terminalId={} sequence={} bodyLength={}",
+        //         String.format("%04X", messageId),
+        //         String.format("%04X", messageProperties),
+        //         terminalId,
+        //         sequence,
+        //         bodyLength);
 
         Integer packageTotal = null;
         Integer packageNumber = null;
@@ -364,11 +376,13 @@ public class V41ProtocolDecoder {
 
         long alarm = buffer.readUnsignedInt();
         position.alarmFlags = alarm;
-        log.debug("V41 location alarmFlags=0x{}", String.format("%08X", alarm));
+        // Expensive debug log: formats flags for every location packet.
+        // log.debug("V41 location alarmFlags=0x{}", String.format("%08X", alarm));
 
         long status = buffer.readUnsignedInt();
         position.statusFlags = status;
-        log.debug("V41 location statusFlags=0x{}", String.format("%08X", status));
+        // Expensive debug log: formats flags for every location packet.
+        // log.debug("V41 location statusFlags=0x{}", String.format("%08X", status));
 
         long latitudeRaw = buffer.readUnsignedInt();
         long longitudeRaw = buffer.readUnsignedInt();
@@ -400,8 +414,9 @@ public class V41ProtocolDecoder {
         buffer.readBytes(datetime);
 
         position.timestamp = decodeDateTime(datetime);
-        log.debug("V41 location datetime rawBcd={} timestamp={}",
-                ByteBufUtil.hexDump(datetime), position.timestamp);
+        // Expensive debug log: hex-dumps BCD timestamp for every location packet.
+        // log.debug("V41 location datetime rawBcd={} timestamp={}",
+        //         ByteBufUtil.hexDump(datetime), position.timestamp);
         position.gpsValid = (status & 0x02) != 0;
         position.accOn = (status & 0x01) != 0;
         position.alarm = decodeAlarm(alarm);
@@ -419,8 +434,9 @@ public class V41ProtocolDecoder {
 
             int id = buffer.readUnsignedByte();
             int length = buffer.readUnsignedByte();
-            log.debug("V41 additional field found id=0x{} length={} remainingBeforeValue={}",
-                    String.format("%02X", id), length, buffer.readableBytes());
+            // Expensive debug log: formats additional-field ids for every field.
+            // log.debug("V41 additional field found id=0x{} length={} remainingBeforeValue={}",
+            //         String.format("%02X", id), length, buffer.readableBytes());
 
             if (length > buffer.readableBytes()) {
                 log.warn("V41 malformed additional field id=0x{} length={} available={}",
@@ -462,8 +478,9 @@ public class V41ProtocolDecoder {
                             String.format("0x%02X", id),
                             ByteBufUtil.hexDump(unknown)
                     );
-                    log.debug("V41 unknown additional field id=0x{} valueHex={}",
-                            String.format("%02X", id), ByteBufUtil.hexDump(unknown));
+                    // Expensive debug log: hex-dumps unknown additional fields.
+                    // log.debug("V41 unknown additional field id=0x{} valueHex={}",
+                    //         String.format("%02X", id), ByteBufUtil.hexDump(unknown));
                 }
             }
         }
@@ -516,8 +533,9 @@ public class V41ProtocolDecoder {
                         value.readableBytes()
                 )
         );
-        log.debug("V41 alarm event decoded hex={}",
-                position.additionalFields.get("alarmEvent"));
+        // Expensive debug log: alarm event hex is already stored in additionalFields.
+        // log.debug("V41 alarm event decoded hex={}",
+        //         position.additionalFields.get("alarmEvent"));
     }
 
     private void decodeV41Status(ByteBuf value, GpsPosition position) {
@@ -526,7 +544,8 @@ public class V41ProtocolDecoder {
         value.getBytes(value.readerIndex(), raw);
 
         position.additionalFields.put("v41StatusRaw", ByteBufUtil.hexDump(raw));
-        log.debug("V41 status extension raw={}", ByteBufUtil.hexDump(raw));
+        // Expensive debug log: hex-dumps status extensions.
+        // log.debug("V41 status extension raw={}", ByteBufUtil.hexDump(raw));
     }
 
     private void decodeV41Lbs(ByteBuf value, GpsPosition position) {
@@ -536,7 +555,8 @@ public class V41ProtocolDecoder {
 
         position.lbsRaw = ByteBufUtil.hexDump(raw);
         position.additionalFields.put("lbs", position.lbsRaw);
-        log.debug("V41 LBS extension raw={}", position.lbsRaw);
+        // Expensive debug log: LBS raw hex is already stored in the position.
+        // log.debug("V41 LBS extension raw={}", position.lbsRaw);
     }
 
     private String decodeAlarm(long alarm) {

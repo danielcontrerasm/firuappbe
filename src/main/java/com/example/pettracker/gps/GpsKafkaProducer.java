@@ -23,6 +23,7 @@ public class GpsKafkaProducer {
             imei, lat, lon, timestamp
         );
         kafkaTemplate.send(topic, imei, payload);
-        log.info("Published GPS event to Kafka topic='{}' key='{}'", topic, imei);
+        // Expensive success-path log: GPS publish can happen once per device position update.
+        // log.info("Published GPS event to Kafka topic='{}' key='{}'", topic, imei);
     }
 }

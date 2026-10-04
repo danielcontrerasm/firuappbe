@@ -77,11 +77,12 @@ public class V41FrameDecoder extends ByteToMessageDecoder {
             }
 
             ByteBuf frame = in.readRetainedSlice(frameLength);
-            log.info("GPS frame decoder emitted frame remote={} protocol={} bytes={} hex={}",
-                    ctx.channel().remoteAddress(),
-                    startByte == V41_FRAME_FLAG ? "V41" : "ASCII_BRACKET",
-                    frameLength,
-                    truncateHex(ByteBufUtil.hexDump(frame, frame.readerIndex(), frame.readableBytes())));
+            // Expensive success-path log: avoids hex-dumping every emitted GPS frame.
+            // log.info("GPS frame decoder emitted frame remote={} protocol={} bytes={} hex={}",
+            //         ctx.channel().remoteAddress(),
+            //         startByte == V41_FRAME_FLAG ? "V41" : "ASCII_BRACKET",
+            //         frameLength,
+            //         truncateHex(ByteBufUtil.hexDump(frame, frame.readerIndex(), frame.readableBytes())));
             out.add(frame);
         }
     }

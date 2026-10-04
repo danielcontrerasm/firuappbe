@@ -105,8 +105,9 @@ public class GpsIngestionService {
                     .build();
 
             Location savedLocation = saveToDatabase(location);
-            log.info("Persisted GPS {} location petId={} petName={} imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={}",
-                    protocol, pet.petId(), pet.petName(), imei, latitude, longitude, timestamp, gpsValid, batteryPercent, batteryVoltage, remoteAddress);
+            // Expensive success-path log: fires once per saved GPS point and duplicates location telemetry.
+            // log.info("Persisted GPS {} location petId={} petName={} imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={}",
+            //         protocol, pet.petId(), pet.petName(), imei, latitude, longitude, timestamp, gpsValid, batteryPercent, batteryVoltage, remoteAddress);
             geofencingService.checkAndAlert(savedLocation);
             geofencingService.checkGeofence(savedLocation);
         });

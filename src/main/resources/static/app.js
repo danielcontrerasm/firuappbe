@@ -5,6 +5,7 @@ const state = {
     pets: [],
     requests: [],
     dogWalks: [],
+    adminMetrics: null,
     selectedRequest: null,
     selectedWalk: null,
     map: null,
@@ -36,6 +37,7 @@ const el = {
     mapMeta: document.getElementById("mapMeta"),
     sendMyPositionBtn: document.getElementById("sendMyPositionBtn"),
     completeWalkBtn: document.getElementById("completeWalkBtn"),
+    adminMetrics: document.getElementById("adminMetrics"),
     adminWalkers: document.getElementById("adminWalkers")
 };
 
@@ -179,6 +181,7 @@ async function refreshDashboard() {
     }
     if (state.me && state.me.role === "ADMIN") {
         loads.push(loadAdminWalkers());
+        loads.push(loadAdminMetrics());
     }
 
     await Promise.all(loads);
@@ -214,6 +217,10 @@ async function loadMyWalkerProfile() {
 
 async function loadAdminWalkers() {
     state.adminWalkers = await api("/api/admin/walkers");
+}
+
+async function loadAdminMetrics() {
+    state.adminMetrics = await api("/api/admin/metrics");
 }
 
 function renderSession() {
@@ -337,6 +344,7 @@ function renderDashboard() {
         renderDogWalkList();
     }
     if (isAdmin) {
+        renderAdminMetrics();
         renderAdminWalkers();
     }
     renderWalkers();
@@ -442,6 +450,37 @@ function renderDogWalkList() {
             await selectDogWalk(Number(button.dataset.walkId));
         });
     });
+}
+
+function renderAdminMetrics() {
+    if (!state.adminMetrics) {
+        el.adminMetrics.innerHTML = `<div class="empty-state">Sin métricas disponibles.</div>`;
+        return;
+    }
+
+    const { http, database, pool, gps, collectedAt } = state.adminMetrics;
+    const cards = [
+        ["Requests", formatNumber(http.totalRequests), `${formatNumber(http.inFlightRequests)} activos`],
+        ["Errores 5xx", formatNumber(http.serverErrorResponses), `${formatNumber(http.clientErrorResponses)} errores 4xx`],
+        ["Transacciones", formatNumber(database.committedTransactions), `${formatNumber(database.rolledBackTransactions)} rollback`],
+        ["Conexiones DB", formatNumber(database.openConnections), `${formatNumber(database.idleInTransactionConnections)} idle tx`],
+        ["Pool Hikari", `${formatNumber(pool.activeConnections)}/${formatNumber(pool.maxPoolSize)}`, `${formatNumber(pool.threadsAwaitingConnection)} esperando`],
+        ["GPS drops", formatNumber(gps.droppedTasks), "cola de ingestión"]
+    ];
+
+    el.adminMetrics.innerHTML = `
+        <div class="metrics-head">
+            <h4>Salud del sistema</h4>
+            <span class="muted">${formatInstant(collectedAt)}</span>
+        </div>
+        ${cards.map(([label, value, detail]) => `
+            <article class="metric-card">
+                <span>${label}</span>
+                <strong>${value}</strong>
+                <small>${detail}</small>
+            </article>
+        `).join("")}
+    `;
 }
 
 function renderAdminWalkers() {
@@ -806,6 +845,10 @@ function formatMoney(value) {
         return "0";
     }
     return Number(value).toLocaleString("es-CO", { maximumFractionDigits: 0 });
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString("es-CO");
 }
 
 function formatDateTime(value) {

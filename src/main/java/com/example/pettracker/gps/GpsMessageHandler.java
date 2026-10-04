@@ -52,8 +52,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     protected void channelRead0(ChannelHandlerContext ctx, ByteBuf frame) {
         String remoteAddress = String.valueOf(ctx.channel().remoteAddress());
         int bytes = frame.readableBytes();
-        String frameHex = ByteBufUtil.hexDump(frame, frame.readerIndex(), bytes);
-        log.info("Received GPS TCP frame remote={} bytes={} hex={}", remoteAddress, bytes, truncateHex(frameHex));
+        // Expensive success-path log: full-frame hex is noisy under live GPS traffic.
+        // log.info("Received GPS TCP frame remote={} bytes={} hex={}", remoteAddress, bytes, truncateHex(hexDumpFrame(frame)));
 
         if (!frame.isReadable()) {
             log.warn("Ignoring empty GPS TCP frame remote={}", remoteAddress);
@@ -62,41 +62,44 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         int firstByte = frame.getUnsignedByte(frame.readerIndex());
         if (firstByte == ASCII_FRAME_START) {
-            handleAsciiBracketFrame(ctx, frame, remoteAddress, frameHex);
+            handleAsciiBracketFrame(ctx, frame, remoteAddress);
             return;
         }
 
         if (firstByte != V41_FRAME_FLAG) {
             log.warn("Unsupported GPS frame remote={} firstByte=0x{} hex={}",
-                    remoteAddress, String.format("%02X", firstByte), truncateHex(frameHex));
+                    remoteAddress, String.format("%02X", firstByte), truncateHex(hexDumpFrame(frame)));
             return;
         }
 
         try {
             DecodeResult result = new V41ProtocolDecoder(appTimeService.zoneId()).decode(frame);
-            log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",
-                    remoteAddress,
-                    result.getMessageType(),
-                    String.format("%04X", result.getMessageId()),
-                    result.getTerminalId(),
-                    result.getSequence());
+            // Expensive success-path log: every V41 frame is already validated and failures still warn below.
+            // log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",
+            //         remoteAddress,
+            //         result.getMessageType(),
+            //         String.format("%04X", result.getMessageId()),
+            //         result.getTerminalId(),
+            //         result.getSequence());
 
             if (result.getPosition() == null) {
-                log.info("GPS V41 message has no location payload remote={} messageType={} terminalId={} sequence={}",
-                        remoteAddress, result.getMessageType(), result.getTerminalId(), result.getSequence());
+                // Expensive success-path log: heartbeats and auth frames can be high-volume.
+                // log.info("GPS V41 message has no location payload remote={} messageType={} terminalId={} sequence={}",
+                //         remoteAddress, result.getMessageType(), result.getTerminalId(), result.getSequence());
                 return;
             }
 
             persistLocation(result.getPosition(), remoteAddress);
         } catch (Exception ex) {
             log.warn("Failed to process GPS V41 frame remote={} hex={}: {}",
-                    remoteAddress, truncateHex(frameHex), ex.getMessage(), ex);
+                    remoteAddress, truncateHex(hexDumpFrame(frame)), ex.getMessage(), ex);
         }
     }
 
-    private void handleAsciiBracketFrame(ChannelHandlerContext ctx, ByteBuf frame, String remoteAddress, String frameHex) {
+    private void handleAsciiBracketFrame(ChannelHandlerContext ctx, ByteBuf frame, String remoteAddress) {
         String raw = frame.toString(StandardCharsets.US_ASCII);
-        log.info("Received GPS ASCII frame remote={} raw='{}'", remoteAddress, sanitizeForLog(raw));
+        // Expensive success-path log: raw device payloads are noisy under live GPS traffic.
+        // log.info("Received GPS ASCII frame remote={} raw='{}'", remoteAddress, sanitizeForLog(raw));
 
         try {
             if (!raw.startsWith("[") || !raw.endsWith("]")) {
@@ -128,21 +131,23 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String knownImei = ctx.channel().attr(DEVICE_IMEI).get();
             String effectiveImei = knownImei != null ? knownImei : terminalId;
 
-            log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}' effectiveImei={}",
-                    remoteAddress,
-                    protocol,
-                    terminalId,
-                    declaredLength,
-                    command,
-                    sanitizeForLog(payload),
-                    effectiveImei);
+            // Expensive success-path log: payload sanitization and full payload logging are noisy.
+            // log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}' effectiveImei={}",
+            //         remoteAddress,
+            //         protocol,
+            //         terminalId,
+            //         declaredLength,
+            //         command,
+            //         sanitizeForLog(payload),
+            //         effectiveImei);
 
             sendAsciiAckIfRequired(ctx, protocol, terminalId, command, remoteAddress);
 
             Coordinates coordinates = extractCoordinates(payload);
             if (coordinates == null) {
-                log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
-                        remoteAddress, command, terminalId, effectiveImei);
+                // Expensive success-path log: non-location ASCII frames can be frequent.
+                // log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
+                //         remoteAddress, command, terminalId, effectiveImei);
                 return;
             }
 
@@ -158,7 +163,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             );
         } catch (Exception ex) {
             log.warn("Failed to process GPS ASCII frame remote={} hex={} raw='{}': {}",
-                    remoteAddress, truncateHex(frameHex), sanitizeForLog(raw), ex.getMessage(), ex);
+                    remoteAddress, truncateHex(hexDumpFrame(frame)), sanitizeForLog(raw), ex.getMessage(), ex);
         }
     }
 
@@ -179,17 +184,18 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             double lat = position.getLatitude();
             double lon = position.getLongitude();
             Instant instant = position.getTimestamp() == null ? Instant.now() : position.getTimestamp();
-            log.info("Parsed GPS V41 location remote={} imei={} lat={} lon={} timestamp={} gpsValid={} speed={} course={} alarm={} additionalFields={}",
-                    remoteAddress,
-                    imei,
-                    lat,
-                    lon,
-                    appTimeService.fromInstant(instant),
-                    position.isGpsValid(),
-                    position.getSpeed(),
-                    position.getCourse(),
-                    position.getAlarm(),
-                    position.getAdditionalFields());
+            // Expensive success-path log: adds per-location timestamp conversion and additional field rendering.
+            // log.info("Parsed GPS V41 location remote={} imei={} lat={} lon={} timestamp={} gpsValid={} speed={} course={} alarm={} additionalFields={}",
+            //         remoteAddress,
+            //         imei,
+            //         lat,
+            //         lon,
+            //         appTimeService.fromInstant(instant),
+            //         position.isGpsValid(),
+            //         position.getSpeed(),
+            //         position.getCourse(),
+            //         position.getAlarm(),
+            //         position.getAdditionalFields());
 
             enqueueDecodedLocation(
                     "V41",
@@ -201,7 +207,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     position.getBattery(),
                     position.getBatteryVoltage(),
                     remoteAddress,
-                    position.toString()
+                    "terminalId=" + imei + ",protocol=V41"
             );
             //producer.sendLocation(imei, lat, lon, ts);
         } catch (Exception ex) {
@@ -235,8 +241,9 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String remoteAddress,
             String context
     ) {
-        log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
-                protocol, imei, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+        // Expensive success-path log: every decoded point is persisted asynchronously below.
+        // log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
+        //         protocol, imei, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
         gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
     }
 
@@ -305,7 +312,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             lat = "S".equalsIgnoreCase(latHemisphere) ? -Math.abs(lat) : Math.abs(lat);
             lon = "W".equalsIgnoreCase(lonHemisphere) ? -Math.abs(lon) : Math.abs(lon);
 
-            log.info("GPS ASCII coordinates extracted lat={} lon={} from payload='{}'", lat, lon, sanitizeForLog(payload));
+            // Expensive success-path log: coordinate extraction runs for every ASCII location payload.
+            // log.info("GPS ASCII coordinates extracted lat={} lon={} from payload='{}'", lat, lon, sanitizeForLog(payload));
             return new Coordinates(lat, lon);
         }
 
@@ -335,6 +343,10 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             return hex;
         }
         return hex.substring(0, MAX_HEX_LOG_LENGTH) + "...(truncated," + hex.length() + " hex chars)";
+    }
+
+    private String hexDumpFrame(ByteBuf frame) {
+        return ByteBufUtil.hexDump(frame, frame.readerIndex(), frame.readableBytes());
     }
 
     private String sanitizeForLog(String value) {
