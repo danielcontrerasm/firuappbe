@@ -138,15 +138,12 @@ public class GpsIngestionService {
             petByImeiCache.put(terminalId, new CachedPetLookup(null, null, now + UNKNOWN_IMEI_CACHE_TTL_MILLIS));
             log.info("GPS pet cache miss terminalId={} result=unknown ttlSeconds={}", terminalId, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
             return Optional.empty();
-        } else{
-            log.info("GPS pet cache found terminalId={} result=unknown ttlSeconds={}", terminalId, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
-
         }
 
         Pet pet = petOpt.get();
         CachedPetLookup lookup = new CachedPetLookup(pet.getId(), pet.getName(), now + PET_CACHE_TTL_MILLIS);
         petByImeiCache.put(terminalId, lookup);
-        log.info("GPS pet cache miss imei={} result=petId={} petName={} ttlSeconds={}",
+        log.info("GPS pet cache miss terminalId={} result=petId={} petName={} ttlSeconds={}",
                 terminalId, pet.getId(), pet.getName(), PET_CACHE_TTL_MILLIS / 1000);
         return Optional.of(lookup);
     }

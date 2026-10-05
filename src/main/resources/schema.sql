@@ -4,9 +4,13 @@ ALTER TABLE IF EXISTS location
     ADD COLUMN IF NOT EXISTS battery_percent integer,
     ADD COLUMN IF NOT EXISTS battery_voltage double precision;
 
+ALTER TABLE IF EXISTS pet
+    ADD COLUMN IF NOT EXISTS terminal_id varchar(255);
+
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_lower ON users (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_pet_owner_id ON pet(owner_id);
 CREATE INDEX IF NOT EXISTS idx_pet_imei ON pet(imei);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pet_terminal_id ON pet(terminal_id) WHERE terminal_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_location_pet_timestamp ON location(pet_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_location_timestamp ON location(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_geofence_pet_id ON geofence(pet_id);

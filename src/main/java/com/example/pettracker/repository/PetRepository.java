@@ -27,5 +27,5 @@ public interface PetRepository extends JpaRepository<Pet, Long> {
 
 
     @EntityGraph(attributePaths = "owner")
-    Optional<Pet> findByTerminalId(String imei);
+    Optional<Pet> findByTerminalId(String terminalId);
 }
