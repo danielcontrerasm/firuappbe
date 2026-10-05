@@ -9,7 +9,6 @@ import com.example.pettracker.service.GpsIngestionService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
-import io.netty.util.AttributeKey;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -19,8 +18,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -32,8 +29,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static final int MAX_HEX_LOG_LENGTH = 512;
     private static final int V41_FRAME_FLAG = 0x7E;
     private static final int ASCII_FRAME_START = '[';
-    private static final AttributeKey<String> DEVICE_IMEI = AttributeKey.valueOf("gps.device.imei");
-    private static final Pattern IMEI_PATTERN = Pattern.compile("\\b\\d{14,17}\\b");
 
     private final GpsIngestionService gpsIngestionService;
     private final AppTimeService appTimeService;
@@ -120,40 +115,29 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String declaredLength = headerParts[2];
             String payload = headerParts[3];
             String command = payloadCommand(payload);
-            String imeiFromPayload = extractImei(payload);
-
-            if (imeiFromPayload != null) {
-                ctx.channel().attr(DEVICE_IMEI).set(imeiFromPayload);
-                log.info("GPS ASCII learned IMEI remote={} terminalId={} imei={} command={}",
-                        remoteAddress, terminalId, imeiFromPayload, command);
-            }
-
-            String knownImei = ctx.channel().attr(DEVICE_IMEI).get();
-            String effectiveImei = knownImei != null ? knownImei : terminalId;
 
             // Expensive success-path log: payload sanitization and full payload logging are noisy.
-            // log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}' effectiveImei={}",
+            // log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}'",
             //         remoteAddress,
             //         protocol,
             //         terminalId,
             //         declaredLength,
             //         command,
-            //         sanitizeForLog(payload),
-            //         effectiveImei);
+            //         sanitizeForLog(payload));
 
             sendAsciiAckIfRequired(ctx, protocol, terminalId, command, remoteAddress);
 
             Coordinates coordinates = extractCoordinates(payload);
             if (coordinates == null) {
                 // Expensive success-path log: non-location ASCII frames can be frequent.
-                // log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={} effectiveImei={}",
-                //         remoteAddress, command, terminalId, effectiveImei);
+                // log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={}",
+                //         remoteAddress, command, terminalId);
                 return;
             }
 
             enqueueDecodedLocation(
                     "ASCII_BRACKET",
-                    effectiveImei,
+                    terminalId,
                     coordinates.latitude(),
                     coordinates.longitude(),
                     Instant.now(),
@@ -168,15 +152,15 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     private void persistLocation(GpsPosition position, String remoteAddress) {
-        String imei = position.getTerminalId();
-        if (imei == null || imei.isBlank()) {
+        String terminalId = position.getTerminalId();
+        if (terminalId == null || terminalId.isBlank()) {
             log.warn("GPS V41 location missing terminalId remote={} position={}", remoteAddress, position);
             return;
         }
 
         if (position.getLatitude() == null || position.getLongitude() == null) {
-            log.warn("GPS V41 location missing coordinates remote={} imei={} position={}",
-                    remoteAddress, imei, position);
+            log.warn("GPS V41 location missing coordinates remote={} terminalId={} position={}",
+                    remoteAddress, terminalId, position);
             return;
         }
 
@@ -185,9 +169,9 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             double lon = position.getLongitude();
             Instant instant = position.getTimestamp() == null ? Instant.now() : position.getTimestamp();
             // Expensive success-path log: adds per-location timestamp conversion and additional field rendering.
-            // log.info("Parsed GPS V41 location remote={} imei={} lat={} lon={} timestamp={} gpsValid={} speed={} course={} alarm={} additionalFields={}",
+            // log.info("Parsed GPS V41 location remote={} terminalId={} lat={} lon={} timestamp={} gpsValid={} speed={} course={} alarm={} additionalFields={}",
             //         remoteAddress,
-            //         imei,
+            //         terminalId,
             //         lat,
             //         lon,
             //         appTimeService.fromInstant(instant),
@@ -199,7 +183,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
             enqueueDecodedLocation(
                     "V41",
-                    imei,
+                    terminalId,
                     lat,
                     lon,
                     instant,
@@ -207,18 +191,18 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     position.getBattery(),
                     position.getBatteryVoltage(),
                     remoteAddress,
-                    "terminalId=" + imei + ",protocol=V41"
+                    "terminalId=" + terminalId + ",protocol=V41"
             );
-            //producer.sendLocation(imei, lat, lon, ts);
+            //producer.sendLocation(terminalId, lat, lon, ts);
         } catch (Exception ex) {
-            log.warn("Failed to persist GPS V41 location remote={} imei={} position={}: {}",
-                    remoteAddress, imei, position, ex.getMessage(), ex);
+            log.warn("Failed to persist GPS V41 location remote={} terminalId={} position={}: {}",
+                    remoteAddress, terminalId, position, ex.getMessage(), ex);
         }
     }
 
     private void enqueueDecodedLocation(
             String protocol,
-            String imei,
+            String terminalId,
             double lat,
             double lon,
             Instant instant,
@@ -226,12 +210,12 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String remoteAddress,
             String context
     ) {
-        enqueueDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, null, null, remoteAddress, context);
+        enqueueDecodedLocation(protocol, terminalId, lat, lon, instant, gpsValid, null, null, remoteAddress, context);
     }
 
     private void enqueueDecodedLocation(
             String protocol,
-            String imei,
+            String terminalId,
             double lat,
             double lon,
             Instant instant,
@@ -242,9 +226,9 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String context
     ) {
         // Expensive success-path log: every decoded point is persisted asynchronously below.
-        // log.info("Enqueuing GPS {} location for async persistence imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
-        //         protocol, imei, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
-        gpsIngestionService.processDecodedLocation(protocol, imei, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+        // log.info("Enqueuing GPS {} location for async persistence terminalId={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
+        //         protocol, terminalId, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+        gpsIngestionService.processDecodedLocation(protocol, terminalId, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
     }
 
     private String payloadCommand(String payload) {
@@ -286,11 +270,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private String buildAsciiFrame(String protocol, String terminalId, String command) {
         return "[" + protocol + "*" + terminalId + "*" + String.format("%04X", command.length()) + "*" + command + "]";
-    }
-
-    private String extractImei(String payload) {
-        Matcher matcher = IMEI_PATTERN.matcher(payload);
-        return matcher.find() ? matcher.group() : null;
     }
 
     private Coordinates extractCoordinates(String payload) {

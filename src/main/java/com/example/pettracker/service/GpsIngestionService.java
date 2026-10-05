@@ -32,7 +32,7 @@ public class GpsIngestionService {
     private final Executor gpsExecutor;
     private final AppTimeService appTimeService;
     private final AtomicLong droppedTasks = new AtomicLong();
-    private final Map<String, CachedPetLookup> petByImeiCache = new ConcurrentHashMap<>();
+    private final Map<String, CachedPetLookup> petByTerminalIdCache = new ConcurrentHashMap<>();
     
     public GpsIngestionService(
             LocationRepository locationRepository,
@@ -57,7 +57,7 @@ public class GpsIngestionService {
 
     public void processDecodedLocation(
             String protocol,
-            String imei,
+            String terminalId,
             double latitude,
             double longitude,
             Instant instant,
@@ -65,12 +65,12 @@ public class GpsIngestionService {
             String remoteAddress,
             String context
     ) {
-        processDecodedLocation(protocol, imei, latitude, longitude, instant, gpsValid, null, null, remoteAddress, context);
+        processDecodedLocation(protocol, terminalId, latitude, longitude, instant, gpsValid, null, null, remoteAddress, context);
     }
 
     public void processDecodedLocation(
             String protocol,
-            String imei,
+            String terminalId,
             double latitude,
             double longitude,
             Instant instant,
@@ -80,16 +80,16 @@ public class GpsIngestionService {
             String remoteAddress,
             String context
     ) {
-        if (imei == null || imei.isBlank()) {
-            log.warn("GPS {} location missing IMEI before async enqueue remote={} context='{}'", protocol, remoteAddress, context);
+        if (terminalId == null || terminalId.isBlank()) {
+            log.warn("GPS {} location missing terminalId before async enqueue remote={} context='{}'", protocol, remoteAddress, context);
             return;
         }
 
-        submitGpsTask(protocol + "-" + imei, () -> {
-            Optional<CachedPetLookup> cachedPet = findPetByImeiCached(imei);
+        submitGpsTask(protocol + "-" + terminalId, () -> {
+            Optional<CachedPetLookup> cachedPet = findPetByTerminalIdCached(terminalId);
             if (cachedPet.isEmpty()) {
-                log.warn("GPS {} location for unknown IMEI={} remote={} lat={} lon={} context='{}'. Skipping persist.",
-                        protocol, imei, remoteAddress, latitude, longitude, context);
+                log.warn("GPS {} location for unknown terminalId={} remote={} lat={} lon={} context='{}'. Skipping persist.",
+                        protocol, terminalId, remoteAddress, latitude, longitude, context);
                 return;
             }
 
@@ -106,43 +106,43 @@ public class GpsIngestionService {
 
             Location savedLocation = saveToDatabase(location);
             // Expensive success-path log: fires once per saved GPS point and duplicates location telemetry.
-            // log.info("Persisted GPS {} location petId={} petName={} imei={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={}",
-            //         protocol, pet.petId(), pet.petName(), imei, latitude, longitude, timestamp, gpsValid, batteryPercent, batteryVoltage, remoteAddress);
+            // log.info("Persisted GPS {} location petId={} petName={} terminalId={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={}",
+            //         protocol, pet.petId(), pet.petName(), terminalId, latitude, longitude, timestamp, gpsValid, batteryPercent, batteryVoltage, remoteAddress);
             geofencingService.checkAndAlert(savedLocation);
             geofencingService.checkGeofence(savedLocation);
         });
     }
 
-    public void evictPetCache(String imei) {
-        if (imei == null || imei.isBlank()) {
+    public void evictPetCache(String terminalId) {
+        if (terminalId == null || terminalId.isBlank()) {
             return;
         }
-        petByImeiCache.remove(imei);
-        log.info("Evicted GPS pet cache imei={}", imei);
+        petByTerminalIdCache.remove(terminalId);
+        log.info("Evicted GPS pet cache terminalId={}", terminalId);
     }
 
-    private Optional<CachedPetLookup> findPetByImeiCached(String terminalId) {
+    private Optional<CachedPetLookup> findPetByTerminalIdCached(String terminalId) {
         long now = System.currentTimeMillis();
-        CachedPetLookup cached = petByImeiCache.get(terminalId);
+        CachedPetLookup cached = petByTerminalIdCache.get(terminalId);
         if (cached != null && cached.expiresAtMillis() > now) {
             if (cached.petId() == null) {
                 log.debug("GPS pet cache hit unknown terminalId={}", terminalId);
                 return Optional.empty();
             }
-            log.debug("GPS pet cache hit imei={} petId={}", terminalId, cached.petId());
+            log.debug("GPS pet cache hit terminalId={} petId={}", terminalId, cached.petId());
             return Optional.of(cached);
         }
 
         Optional<Pet> petOpt = petRepository.findByTerminalId(terminalId);
         if (petOpt.isEmpty()) {
-            petByImeiCache.put(terminalId, new CachedPetLookup(null, null, now + UNKNOWN_IMEI_CACHE_TTL_MILLIS));
+            petByTerminalIdCache.put(terminalId, new CachedPetLookup(null, null, now + UNKNOWN_IMEI_CACHE_TTL_MILLIS));
             log.info("GPS pet cache miss terminalId={} result=unknown ttlSeconds={}", terminalId, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
             return Optional.empty();
         }
 
         Pet pet = petOpt.get();
         CachedPetLookup lookup = new CachedPetLookup(pet.getId(), pet.getName(), now + PET_CACHE_TTL_MILLIS);
-        petByImeiCache.put(terminalId, lookup);
+        petByTerminalIdCache.put(terminalId, lookup);
         log.info("GPS pet cache miss terminalId={} result=petId={} petName={} ttlSeconds={}",
                 terminalId, pet.getId(), pet.getName(), PET_CACHE_TTL_MILLIS / 1000);
         return Optional.of(lookup);
