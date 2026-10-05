@@ -115,6 +115,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String declaredLength = headerParts[2];
             String payload = headerParts[3];
             String command = payloadCommand(payload);
+            Integer batteryPercent = extractBatteryPercent(command, payload);
 
             // Expensive success-path log: payload sanitization and full payload logging are noisy.
             // log.info("Decoded GPS ASCII frame remote={} protocol={} terminalId={} declaredLength={} command={} payload='{}'",
@@ -142,8 +143,10 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     coordinates.longitude(),
                     Instant.now(),
                     true,
+                    batteryPercent,
+                    null,
                     remoteAddress,
-                    "command=" + command + ",terminalId=" + terminalId
+                    "command=" + command + ",terminalId=" + terminalId + ",batteryPercent=" + batteryPercent
             );
         } catch (Exception ex) {
             log.warn("Failed to process GPS ASCII frame remote={} hex={} raw='{}': {}",
@@ -270,6 +273,29 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private String buildAsciiFrame(String protocol, String terminalId, String command) {
         return "[" + protocol + "*" + terminalId + "*" + String.format("%04X", command.length()) + "*" + command + "]";
+    }
+
+    Integer extractBatteryPercent(String command, String payload) {
+        String[] parts = payload.split(",", -1);
+        if ("UD_LTE".equalsIgnoreCase(command)) {
+            return parseBatteryPercent(parts, 13);
+        }
+        if ("LK".equalsIgnoreCase(command)) {
+            return parseBatteryPercent(parts, parts.length - 1);
+        }
+        return null;
+    }
+
+    private Integer parseBatteryPercent(String[] parts, int index) {
+        if (index < 0 || index >= parts.length) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(parts[index].trim());
+            return value >= 0 && value <= 100 ? value : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private Coordinates extractCoordinates(String payload) {
