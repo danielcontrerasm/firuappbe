@@ -33,7 +33,7 @@ public class Pet {
     @Column(unique=true)     // <- we map tracker IMEI to a Pet
     private String imei;
     private Instant createdAt = Instant.now();
-
+    private String terminalId;
     private String imageContentType;
     private String imageFileName;
 

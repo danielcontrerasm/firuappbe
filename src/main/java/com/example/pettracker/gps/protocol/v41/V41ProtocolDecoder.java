@@ -464,6 +464,9 @@ public class V41ProtocolDecoder {
                 case 0x04 ->
                         decodeAlarmEvent(value, position);
 
+                case 0xE1 ->
+                        decodeBatteryPercent(value, position);
+
                 case 0xE7 ->
                         decodeV41Status(value, position);
 
@@ -536,6 +539,23 @@ public class V41ProtocolDecoder {
         // Expensive debug log: alarm event hex is already stored in additionalFields.
         // log.debug("V41 alarm event decoded hex={}",
         //         position.additionalFields.get("alarmEvent"));
+    }
+
+    private void decodeBatteryPercent(ByteBuf value, GpsPosition position) {
+
+        if (!value.isReadable()) {
+            return;
+        }
+
+        int raw = value.readUnsignedByte();
+        setBatteryPercent(position, raw);
+    }
+
+    private void setBatteryPercent(GpsPosition position, int rawPercent) {
+        position.additionalFields.put("batteryPercentRaw", String.valueOf(rawPercent));
+        if (rawPercent <= 100) {
+            position.battery = rawPercent;
+        }
     }
 
     private void decodeV41Status(ByteBuf value, GpsPosition position) {

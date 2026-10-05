@@ -121,30 +121,33 @@ public class GpsIngestionService {
         log.info("Evicted GPS pet cache imei={}", imei);
     }
 
-    private Optional<CachedPetLookup> findPetByImeiCached(String imei) {
+    private Optional<CachedPetLookup> findPetByImeiCached(String terminalId) {
         long now = System.currentTimeMillis();
-        CachedPetLookup cached = petByImeiCache.get(imei);
+        CachedPetLookup cached = petByImeiCache.get(terminalId);
         if (cached != null && cached.expiresAtMillis() > now) {
             if (cached.petId() == null) {
-                log.debug("GPS pet cache hit unknown imei={}", imei);
+                log.debug("GPS pet cache hit unknown terminalId={}", terminalId);
                 return Optional.empty();
             }
-            log.debug("GPS pet cache hit imei={} petId={}", imei, cached.petId());
+            log.debug("GPS pet cache hit imei={} petId={}", terminalId, cached.petId());
             return Optional.of(cached);
         }
 
-        Optional<Pet> petOpt = petRepository.findByImei(imei);
+        Optional<Pet> petOpt = petRepository.findByTerminalId(terminalId);
         if (petOpt.isEmpty()) {
-            petByImeiCache.put(imei, new CachedPetLookup(null, null, now + UNKNOWN_IMEI_CACHE_TTL_MILLIS));
-            log.info("GPS pet cache miss imei={} result=unknown ttlSeconds={}", imei, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
+            petByImeiCache.put(terminalId, new CachedPetLookup(null, null, now + UNKNOWN_IMEI_CACHE_TTL_MILLIS));
+            log.info("GPS pet cache miss terminalId={} result=unknown ttlSeconds={}", terminalId, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
             return Optional.empty();
+        } else{
+            log.info("GPS pet cache found terminalId={} result=unknown ttlSeconds={}", terminalId, UNKNOWN_IMEI_CACHE_TTL_MILLIS / 1000);
+
         }
 
         Pet pet = petOpt.get();
         CachedPetLookup lookup = new CachedPetLookup(pet.getId(), pet.getName(), now + PET_CACHE_TTL_MILLIS);
-        petByImeiCache.put(imei, lookup);
+        petByImeiCache.put(terminalId, lookup);
         log.info("GPS pet cache miss imei={} result=petId={} petName={} ttlSeconds={}",
-                imei, pet.getId(), pet.getName(), PET_CACHE_TTL_MILLIS / 1000);
+                terminalId, pet.getId(), pet.getName(), PET_CACHE_TTL_MILLIS / 1000);
         return Optional.of(lookup);
     }
 
