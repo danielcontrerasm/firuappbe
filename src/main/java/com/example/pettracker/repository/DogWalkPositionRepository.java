@@ -1,6 +1,7 @@
 package com.example.pettracker.repository;
 
 import com.example.pettracker.entity.DogWalkPosition;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -27,4 +28,19 @@ public interface DogWalkPositionRepository extends JpaRepository<DogWalkPosition
               )
             """)
     List<DogWalkPosition> findLatestByDogWalkIds(@Param("dogWalkIds") List<Long> dogWalkIds);
+
+    @Query("""
+            SELECT position
+            FROM DogWalkPosition position
+            JOIN FETCH position.dogWalk dogWalk
+            WHERE dogWalk.pet.id = :petId
+              AND position.recordedAt >= :from
+              AND position.recordedAt < :to
+            ORDER BY dogWalk.id ASC, position.recordedAt ASC
+            """)
+    List<DogWalkPosition> findByPetIdAndRecordedAtBetweenOrderByWalkAndTime(
+            @Param("petId") Long petId,
+            @Param("from") Instant from,
+            @Param("to") Instant to
+    );
 }

@@ -33,6 +33,14 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     @Query("SELECT l FROM Location l WHERE l.pet.id = :petId AND l.timestamp >= :cutoff ORDER BY l.timestamp ASC")
     List<Location> findPetRouteSince(@Param("petId") Long petId, @Param("cutoff") LocalDateTime cutoff, Pageable pageable);
 
+    @Query("SELECT l FROM Location l WHERE l.pet.id = :petId AND l.timestamp BETWEEN :from AND :to ORDER BY l.timestamp ASC")
+    List<Location> findPetRouteBetween(
+            @Param("petId") Long petId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            Pageable pageable
+    );
+
 
     @Override
     @EntityGraph(attributePaths = "pet")

@@ -100,6 +100,25 @@ public class LocationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<LocationDTO> getPetRouteBetween(Long petId, String from, String to) {
+        LocalDateTime fromTimestamp = parseRequiredRequestTimestamp(from, "from");
+        LocalDateTime toTimestamp = parseRequiredRequestTimestamp(to, "to");
+        if (fromTimestamp.isAfter(toTimestamp)) {
+            throw new IllegalArgumentException("from must be before or equal to to");
+        }
+
+        return locationRepository.findPetRouteBetween(
+                        petId,
+                        fromTimestamp,
+                        toTimestamp,
+                        PageRequest.of(0, DEFAULT_ROUTE_LIMIT)
+                )
+                .stream()
+                .map(locationMapper::toDto)
+                .toList();
+    }
+
     public LocalDateTime now() {
         return appTimeService.now();
     }
@@ -124,6 +143,13 @@ public class LocationService {
         } catch (DateTimeParseException exception) {
             throw new IllegalArgumentException("Invalid timestamp. Use ISO-8601 format.", exception);
         }
+    }
+
+    private LocalDateTime parseRequiredRequestTimestamp(String timestamp, String fieldName) {
+        if (timestamp == null || timestamp.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        return parseRequestTimestamp(timestamp);
     }
 
     private LocationDTO toDtoWithNeighborhood(Location location) {

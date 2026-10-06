@@ -4,13 +4,16 @@ import com.example.pettracker.dto.LocationDTO;
 import com.example.pettracker.dto.LocationRequest;
 import com.example.pettracker.dto.PetDto;
 import com.example.pettracker.dto.PetNeighborhoodDto;
+import com.example.pettracker.dto.PetWalkDistanceDayDto;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.mapper.PetMapper;
 import com.example.pettracker.service.LocationService;
+import com.example.pettracker.service.PetWalkDistanceService;
 import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.CacheControl;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,14 +41,17 @@ public class PetController {
     private final PetService petService;
     private final UserService userService;
     private final LocationService locationService;
+    private final PetWalkDistanceService petWalkDistanceService;
 
     public PetController(
             PetService petService,
             UserService userService,
-            LocationService locationService) {
+            LocationService locationService,
+            PetWalkDistanceService petWalkDistanceService) {
         this.petService = petService;
         this.userService = userService;
         this.locationService = locationService;
+        this.petWalkDistanceService = petWalkDistanceService;
     }
     @GetMapping("/locations")
     public List <LocationDTO> findLastLocationsByUserId ( Authentication authentication){
@@ -246,6 +253,27 @@ public class PetController {
         return ResponseEntity.ok(locationService.getPetRouteLast3Hours(id));
     }
 
+    @GetMapping("/{id}/route/range")
+    public ResponseEntity<List<LocationDTO>> routeBetween(
+            @PathVariable Long id,
+            @RequestParam String from,
+            @RequestParam String to,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet pet = petService.findById(id);
+        if (pet == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!canAccessPet(user, pet)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        try {
+            return ResponseEntity.ok(locationService.getPetRouteBetween(id, from, to));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @GetMapping("/{id}/neighborhood")
     public ResponseEntity<PetNeighborhoodDto> neighborhood(@PathVariable Long id, Authentication authentication) {
         User user = currentUser(authentication);
@@ -263,6 +291,22 @@ public class PetController {
         }
 
         return ResponseEntity.ok(locationService.getNeighborhoodByPetId(id));
+    }
+
+    @GetMapping("/{id}/walk-distance/week")
+    public ResponseEntity<List<PetWalkDistanceDayDto>> weeklyWalkDistance(
+            @PathVariable Long id,
+            @RequestParam(required = false) LocalDate weekStart,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet pet = petService.findById(id);
+        if (pet == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!canAccessPet(user, pet)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(petWalkDistanceService.getWeeklyDistance(id, weekStart));
     }
 
     @PostMapping("/{id}/locations")
