@@ -36,7 +36,7 @@ public interface LocationMapper {
                 neighborhood == null ? location.getAddress() : neighborhood.displayName(),
                 neighborhood == null ? location.getNeighborhood() : neighborhood.neighborhood(),
                 neighborhood == null ? location.getComuna() : neighborhood.district(),
-                neighborhood == null ? location.getNeighborhoodResolved() : neighborhood.resolved(),
+                neighborhood == null ? location.getNeighborhoodResolved() : Boolean.valueOf(neighborhood.resolved()),
                 neighborhood == null ? location.getNeighborhoodSource() : neighborhood.source()
         );
     }
