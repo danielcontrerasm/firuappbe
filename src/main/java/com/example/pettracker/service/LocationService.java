@@ -9,7 +9,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @Service
@@ -37,7 +40,9 @@ public class LocationService {
     }
 
     public LocationDTO save(Location l) {
-       return  locationMapper.toDto(gpsIngestionService.processGpsUpdate(l));
+        Location savedLocation = gpsIngestionService.processGpsUpdate(l);
+        PetNeighborhoodDto neighborhood = neighborhoodLookupService.resolveNeighborhood(savedLocation);
+        return locationMapper.toDto(savedLocation, neighborhood);
     }
 
     @Transactional(readOnly = true)
@@ -97,6 +102,28 @@ public class LocationService {
 
     public LocalDateTime now() {
         return appTimeService.now();
+    }
+
+    public LocalDateTime parseRequestTimestamp(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) {
+            return appTimeService.now();
+        }
+
+        try {
+            return appTimeService.fromInstant(Instant.parse(timestamp));
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return appTimeService.fromInstant(OffsetDateTime.parse(timestamp).toInstant());
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return LocalDateTime.parse(timestamp);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException("Invalid timestamp. Use ISO-8601 format.", exception);
+        }
     }
 
 }

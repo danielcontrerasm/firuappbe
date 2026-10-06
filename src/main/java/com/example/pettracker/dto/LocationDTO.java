@@ -8,5 +8,11 @@ public record LocationDTO(
         Integer batteryPercent,
         Double batteryVoltage,
         String petName,
-        String timestamp
+        String timestamp,
+        String city,
+        String address,
+        String neighborhood,
+        String comuna,
+        Boolean neighborhoodResolved,
+        String neighborhoodSource
 ) {}

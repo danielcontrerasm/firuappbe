@@ -21,6 +21,7 @@ public class PetMapper {
                 pet.getStatus() == null ? null : pet.getStatus().name(),
                 statusLabel(pet),
                 pet.getImei(),
+                pet.getTerminalId(),
                 pet.getCreatedAt(),
                 owner == null ? null : owner.getId(),
                 owner == null ? null : owner.getName(),

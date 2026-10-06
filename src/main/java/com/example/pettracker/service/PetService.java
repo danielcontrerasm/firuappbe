@@ -36,14 +36,14 @@ public class PetService {
 
     public Pet create(Pet p) {
         Pet saved = petRepository.save(p);
-        gpsIngestionService.evictPetCache(saved.getImei());
+        gpsIngestionService.evictPetCache(saved.getTerminalId());
         return saved;
     }
 
     public Pet create(Pet pet, MultipartFile image) {
         setImageIfPresent(pet, image);
         Pet saved = petRepository.save(pet);
-        gpsIngestionService.evictPetCache(saved.getImei());
+        gpsIngestionService.evictPetCache(saved.getTerminalId());
         return saved;
     }
 
@@ -71,16 +71,35 @@ public class PetService {
     }
 
     public Pet update(Pet p) {
+        String previousTerminalId = findPreviousTerminalId(p);
         Pet saved = petRepository.save(p);
-        gpsIngestionService.evictPetCache(saved.getImei());
+        evictTerminalIdCache(previousTerminalId, saved.getTerminalId());
         return saved;
     }
 
     public Pet update(Pet pet, MultipartFile image) {
+        String previousTerminalId = findPreviousTerminalId(pet);
         setImageIfPresent(pet, image);
         Pet saved = petRepository.save(pet);
-        gpsIngestionService.evictPetCache(saved.getImei());
+        evictTerminalIdCache(previousTerminalId, saved.getTerminalId());
         return saved;
+    }
+
+    private String findPreviousTerminalId(Pet pet) {
+        if (pet == null || pet.getId() == null) {
+            return null;
+        }
+        return petRepository.findById(pet.getId())
+                .map(Pet::getTerminalId)
+                .orElse(null);
+    }
+
+    private void evictTerminalIdCache(String previousTerminalId, String currentTerminalId) {
+        gpsIngestionService.evictPetCache(previousTerminalId);
+        if (currentTerminalId == null || currentTerminalId.equals(previousTerminalId)) {
+            return;
+        }
+        gpsIngestionService.evictPetCache(currentTerminalId);
     }
 
     private void setImageIfPresent(Pet pet, MultipartFile image) {

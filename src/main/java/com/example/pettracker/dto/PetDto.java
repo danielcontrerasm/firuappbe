@@ -12,6 +12,7 @@ public record PetDto(
         String status,
         String statusLabel,
         String imei,
+        String terminalId,
         Instant createdAt,
         Long ownerId,
         String ownerName,

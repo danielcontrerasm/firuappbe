@@ -279,11 +279,18 @@ public class PetController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
+        LocalDateTime timestamp;
+        try {
+            timestamp = locationService.parseRequestTimestamp(request.getTimestamp());
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().build();
+        }
+
         Location location = Location.builder()
                 .pet(pet)
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
-                .timestamp(request.getTimestamp() == null ? locationService.now() : request.getTimestamp())
+                .timestamp(timestamp)
                 .batteryPercent(request.getBatteryPercent())
                 .batteryVoltage(request.getBatteryVoltage())
                 .build();
@@ -318,6 +325,7 @@ public class PetController {
                 base.status(),
                 base.statusLabel(),
                 base.imei(),
+                base.terminalId(),
                 base.createdAt(),
                 base.ownerId(),
                 base.ownerName(),
@@ -336,6 +344,7 @@ public class PetController {
         pet.setAge(request.age());
         pet.setWeight(request.weight());
         pet.setImei(request.imei());
+        pet.setTerminalId(request.terminalId());
         if (request.status() != null) {
             pet.setStatus(Pet.Status.valueOf(request.status().toUpperCase()));
         }
