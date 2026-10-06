@@ -32,12 +32,12 @@ public interface LocationMapper {
                 location.getBatteryVoltage(),
                 pet == null ? null : pet.getName(),
                 location.getTimestamp() == null ? null : DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(location.getTimestamp()),
-                neighborhood == null ? null : neighborhood.city(),
-                neighborhood == null ? null : neighborhood.displayName(),
-                neighborhood == null ? null : neighborhood.neighborhood(),
-                neighborhood == null ? null : neighborhood.district(),
-                neighborhood == null ? null : neighborhood.resolved(),
-                neighborhood == null ? null : neighborhood.source()
+                neighborhood == null ? location.getCity() : neighborhood.city(),
+                neighborhood == null ? location.getAddress() : neighborhood.displayName(),
+                neighborhood == null ? location.getNeighborhood() : neighborhood.neighborhood(),
+                neighborhood == null ? location.getComuna() : neighborhood.district(),
+                neighborhood == null ? location.getNeighborhoodResolved() : neighborhood.resolved(),
+                neighborhood == null ? location.getNeighborhoodSource() : neighborhood.source()
         );
     }
 }

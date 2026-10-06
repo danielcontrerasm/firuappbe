@@ -27,6 +27,18 @@ public class Location {
 
     private Double batteryVoltage;
 
+    private String city;
+
+    private String address;
+
+    private String neighborhood;
+
+    private String comuna;
+
+    private Boolean neighborhoodResolved;
+
+    private String neighborhoodSource;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "pet_id")
     private Pet pet;

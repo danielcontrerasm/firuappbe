@@ -2,7 +2,13 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 
 ALTER TABLE IF EXISTS location
     ADD COLUMN IF NOT EXISTS battery_percent integer,
-    ADD COLUMN IF NOT EXISTS battery_voltage double precision;
+    ADD COLUMN IF NOT EXISTS battery_voltage double precision,
+    ADD COLUMN IF NOT EXISTS city varchar(255),
+    ADD COLUMN IF NOT EXISTS address text,
+    ADD COLUMN IF NOT EXISTS neighborhood varchar(255),
+    ADD COLUMN IF NOT EXISTS comuna varchar(255),
+    ADD COLUMN IF NOT EXISTS neighborhood_resolved boolean,
+    ADD COLUMN IF NOT EXISTS neighborhood_source varchar(255);
 
 ALTER TABLE IF EXISTS pet
     ADD COLUMN IF NOT EXISTS terminal_id varchar(255);

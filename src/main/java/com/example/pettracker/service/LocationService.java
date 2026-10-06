@@ -41,18 +41,17 @@ public class LocationService {
 
     public LocationDTO save(Location l) {
         Location savedLocation = gpsIngestionService.processGpsUpdate(l);
-        PetNeighborhoodDto neighborhood = neighborhoodLookupService.resolveNeighborhood(savedLocation);
-        return locationMapper.toDto(savedLocation, neighborhood);
+        return toDtoWithNeighborhood(savedLocation);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LocationDTO> getByPetId(Long petId) {
         return locationRepository.findByPetIdOrderByTimestampDesc(
                         petId,
                         PageRequest.of(0, DEFAULT_RECENT_LOCATION_LIMIT)
                 )
                 .stream()
-                .map(locationMapper::toDto)
+                .map(this::toDtoWithNeighborhood)
                 .toList();
 
     }
@@ -62,28 +61,29 @@ public class LocationService {
         return locationRepository.findTopByPetIdOrderByTimestampDesc(petId).orElse(null);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PetNeighborhoodDto getNeighborhoodByPetId(Long petId) {
         Location latestLocation = getLatestByPetId(petId);
         if (latestLocation == null) {
             return null;
         }
-        return neighborhoodLookupService.resolveNeighborhood(latestLocation);
+        Location enrichedLocation = enrichWithNeighborhood(latestLocation);
+        return toPetNeighborhoodDto(enrichedLocation);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LocationDTO> findAll() {
         return locationRepository.findLastLocationsForAllPets()
                 .stream()
-                .map(locationMapper::toDto)
+                .map(this::toDtoWithNeighborhood)
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LocationDTO> findLastLocationsByUserId(Long userId) {
         return locationRepository.findLastLocationsByUserId(userId)
                 .stream()
-                .map(locationMapper::toDto)
+                .map(this::toDtoWithNeighborhood)
                 .toList();
     }
 
@@ -124,6 +124,67 @@ public class LocationService {
         } catch (DateTimeParseException exception) {
             throw new IllegalArgumentException("Invalid timestamp. Use ISO-8601 format.", exception);
         }
+    }
+
+    private LocationDTO toDtoWithNeighborhood(Location location) {
+        Location enrichedLocation = enrichWithNeighborhood(location);
+        return locationMapper.toDto(enrichedLocation);
+    }
+
+    private PetNeighborhoodDto toPetNeighborhoodDto(Location location) {
+        if (location == null) {
+            return null;
+        }
+        return new PetNeighborhoodDto(
+                location.getPet() == null ? null : location.getPet().getId(),
+                location.getLatitude(),
+                location.getLongitude(),
+                location.getTimestamp() == null ? null : location.getTimestamp().toString(),
+                location.getNeighborhood(),
+                location.getComuna(),
+                location.getCity(),
+                location.getAddress(),
+                location.getNeighborhoodSource(),
+                Boolean.TRUE.equals(location.getNeighborhoodResolved())
+        );
+    }
+
+    private Location enrichWithNeighborhood(Location location) {
+        if (location == null || hasStoredNeighborhoodData(location)) {
+            return location;
+        }
+
+        PetNeighborhoodDto neighborhood = neighborhoodLookupService.resolveNeighborhood(location);
+        applyNeighborhood(location, neighborhood);
+        if (location.getId() != null) {
+            return locationRepository.save(location);
+        }
+        return location;
+    }
+
+    private boolean hasStoredNeighborhoodData(Location location) {
+        return hasText(location.getCity())
+                || hasText(location.getAddress())
+                || hasText(location.getNeighborhood())
+                || hasText(location.getComuna())
+                || location.getNeighborhoodResolved() != null
+                || hasText(location.getNeighborhoodSource());
+    }
+
+    private void applyNeighborhood(Location location, PetNeighborhoodDto neighborhood) {
+        if (location == null || neighborhood == null) {
+            return;
+        }
+        location.setCity(neighborhood.city());
+        location.setAddress(neighborhood.displayName());
+        location.setNeighborhood(neighborhood.neighborhood());
+        location.setComuna(neighborhood.district());
+        location.setNeighborhoodResolved(neighborhood.resolved());
+        location.setNeighborhoodSource(neighborhood.source());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
 }
