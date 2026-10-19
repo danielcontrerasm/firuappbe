@@ -1,6 +1,7 @@
 package com.example.pettracker.repository;
 
 import com.example.pettracker.entity.Volunteer;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -13,7 +14,11 @@ public interface VolunteerRepository extends JpaRepository<Volunteer, Long> {
 
     List<Volunteer> findBySearchGroupIdAndActiveTrue(Long searchGroupId);
 
+    List<Volunteer> findBySearchGroupIdAndActiveTrue(Long searchGroupId, Pageable pageable);
+
     List<Volunteer> findByUserIdAndActiveTrue(Long userId);
+
+    List<Volunteer> findByUserIdAndActiveTrue(Long userId, Pageable pageable);
 
     List<Volunteer> findBySearchGroupId(Long searchGroupId);
 

@@ -10,6 +10,9 @@ import com.example.pettracker.transit.mapper.TransitMapper;
 import com.example.pettracker.transit.service.TransitGeofencingService;
 import com.example.pettracker.transit.service.TransitVehicleService;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -19,11 +22,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/transit/geofences")
 public class TransitGeofenceController {
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final TransitGeofencingService transitGeofencingService;
     private final TransitVehicleService transitVehicleService;
@@ -58,6 +64,8 @@ public class TransitGeofenceController {
     @GetMapping("/vehicle/{vehicleId}")
     public ResponseEntity<List<TransitScheduledGeofenceDto>> list(
             @PathVariable Long vehicleId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
         User user = currentUser(authentication);
         TransitVehicle vehicle = transitVehicleService.findById(vehicleId);
@@ -67,7 +75,7 @@ public class TransitGeofenceController {
         if (!transitVehicleService.canAccess(user, vehicle)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(transitGeofencingService.getVehicleGeofences(vehicleId).stream()
+        return ResponseEntity.ok(transitGeofencingService.getVehicleGeofences(vehicleId, pageRequest(page, size)).stream()
                 .map(TransitMapper::toDto)
                 .toList());
     }
@@ -92,5 +100,11 @@ public class TransitGeofenceController {
         }
         return userService.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
     }
 }

@@ -3,6 +3,7 @@ const state = {
     me: null,
     walkers: [],
     pets: [],
+    petWalkDistancesByPetId: {},
     requests: [],
     dogWalks: [],
     adminMetrics: null,
@@ -106,6 +107,7 @@ function logout() {
     state.token = "";
     state.me = null;
     state.pets = [];
+    state.petWalkDistancesByPetId = {};
     state.requests = [];
     state.dogWalks = [];
     state.selectedRequest = null;
@@ -201,6 +203,20 @@ async function loadPublicWalkers() {
 
 async function loadPets() {
     state.pets = await api("/api/pets");
+    await loadPetWalkDistances();
+}
+
+async function loadPetWalkDistances() {
+    const entries = await Promise.all(state.pets.map(async (pet) => {
+        try {
+            const distances = await api(`/api/pets/${pet.id}/walk-distance/week`);
+            return [pet.id, distances];
+        } catch (error) {
+            console.warn(error);
+            return [pet.id, []];
+        }
+    }));
+    state.petWalkDistancesByPetId = Object.fromEntries(entries);
 }
 
 async function loadRequests() {
@@ -366,8 +382,44 @@ function renderPets() {
                 <span>${escapeHtml(pet.race || "Sin raza")}</span>
                 <span>${escapeHtml(pet.neighborhood || "Ubicación sin resolver")}</span>
             </div>
+            ${renderPetWeeklyDistanceTable(pet)}
         </article>
     `).join("");
+}
+
+function renderPetWeeklyDistanceTable(pet) {
+    const distances = state.petWalkDistancesByPetId[pet.id] || [];
+    if (!distances.length) {
+        return `<div class="empty-state compact-empty">Sin datos de caminata esta semana.</div>`;
+    }
+
+    const totalKm = distances.reduce((total, day) => total + Number(day.distanceKm || 0), 0);
+    return `
+        <div class="mini-table-wrap">
+            <div class="mini-table-title">
+                <strong>Km caminados esta semana</strong>
+                <span>${formatKm(totalKm)} km</span>
+            </div>
+            <table class="mini-table">
+                <thead>
+                    <tr>
+                        <th>Día</th>
+                        <th>Fecha</th>
+                        <th>Km</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${distances.map((day) => `
+                        <tr>
+                            <td>${formatWeekday(day.dayOfWeek)}</td>
+                            <td>${formatDate(day.date)}</td>
+                            <td>${formatKm(day.distanceKm)}</td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </div>
+    `;
 }
 
 function renderWalkerProfile() {
@@ -465,7 +517,8 @@ function renderAdminMetrics() {
         ["Transacciones", formatNumber(database.committedTransactions), `${formatNumber(database.rolledBackTransactions)} rollback`],
         ["Conexiones DB", formatNumber(database.openConnections), `${formatNumber(database.idleInTransactionConnections)} idle tx`],
         ["Pool Hikari", `${formatNumber(pool.activeConnections)}/${formatNumber(pool.maxPoolSize)}`, `${formatNumber(pool.threadsAwaitingConnection)} esperando`],
-        ["GPS drops", formatNumber(gps.droppedTasks), "cola de ingestión"]
+        ["GPS drops", formatNumber(gps.droppedTasks), "executor async"],
+        ["GPS queue", gps.messageQueueEnabled ? "Activa" : "Inactiva", `${formatNumber(gps.messageQueueDepth)} pendientes · ${formatNumber(gps.droppedMessages)} drops`]
     ];
 
     el.adminMetrics.innerHTML = `
@@ -849,6 +902,37 @@ function formatMoney(value) {
 
 function formatNumber(value) {
     return Number(value || 0).toLocaleString("es-CO");
+}
+
+function formatKm(value) {
+    return Number(value || 0).toLocaleString("es-CO", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function formatDate(value) {
+    if (!value) {
+        return "Sin fecha";
+    }
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+    return date.toLocaleDateString("es-CO", { month: "short", day: "numeric" });
+}
+
+function formatWeekday(value) {
+    const labels = {
+        MONDAY: "Lunes",
+        TUESDAY: "Martes",
+        WEDNESDAY: "Miércoles",
+        THURSDAY: "Jueves",
+        FRIDAY: "Viernes",
+        SATURDAY: "Sábado",
+        SUNDAY: "Domingo"
+    };
+    return labels[value] || value || "Día";
 }
 
 function formatDateTime(value) {

@@ -11,6 +11,7 @@ import com.example.pettracker.transit.repository.TransitSearchGroupRepository;
 import com.example.pettracker.transit.repository.TransitVolunteerRepository;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,8 +73,19 @@ public class TransitSearchGroupService {
         return transitSearchGroupRepository.findByVehicleId(vehicleId);
     }
 
+    public List<TransitSearchGroup> listForVehicle(Long vehicleId, Pageable pageable) {
+        return transitSearchGroupRepository.findByVehicleId(vehicleId, pageable);
+    }
+
     public List<TransitSearchGroup> listForUser(Long userId) {
         return transitVolunteerRepository.findByUserIdAndActiveTrue(userId).stream()
+                .map(TransitVolunteer::getSearchGroup)
+                .distinct()
+                .toList();
+    }
+
+    public List<TransitSearchGroup> listForUser(Long userId, Pageable pageable) {
+        return transitVolunteerRepository.findByUserIdAndActiveTrue(userId, pageable).stream()
                 .map(TransitVolunteer::getSearchGroup)
                 .distinct()
                 .toList();

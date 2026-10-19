@@ -14,6 +14,9 @@ import com.example.pettracker.transit.service.TransitReportService;
 import com.example.pettracker.transit.service.TransitVehicleService;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -28,6 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/transit/vehicles")
 public class TransitVehicleController {
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final TransitVehicleService transitVehicleService;
     private final TransitLocationService transitLocationService;
@@ -46,9 +51,12 @@ public class TransitVehicleController {
     }
 
     @GetMapping
-    public List<TransitVehicleDto> list(Authentication authentication) {
+    public List<TransitVehicleDto> list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
         User user = currentUser(authentication);
-        return transitVehicleService.listForUser(user).stream()
+        return transitVehicleService.listForUser(user, pageRequest(page, size)).stream()
                 .map(TransitMapper::toDto)
                 .toList();
     }
@@ -150,6 +158,12 @@ public class TransitVehicleController {
         }
         return userService.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "id"));
     }
 
     private User resolveOwner(User currentUser, Long ownerId) {

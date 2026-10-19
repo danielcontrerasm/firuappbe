@@ -41,6 +41,7 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     implementation 'io.netty:netty-all:4.1.112.Final'
+    implementation 'com.github.ben-manes.caffeine:caffeine'
 
     // Spring for Kafka
     implementation 'org.springframework.kafka:spring-kafka'

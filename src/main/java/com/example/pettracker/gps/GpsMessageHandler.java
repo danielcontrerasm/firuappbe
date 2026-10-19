@@ -203,18 +203,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
-    private void enqueueDecodedLocation(
-            String protocol,
-            String terminalId,
-            double lat,
-            double lon,
-            Instant instant,
-            boolean gpsValid,
-            String remoteAddress,
-            String context
-    ) {
-        enqueueDecodedLocation(protocol, terminalId, lat, lon, instant, gpsValid, null, null, remoteAddress, context);
-    }
 
     private void enqueueDecodedLocation(
             String protocol,

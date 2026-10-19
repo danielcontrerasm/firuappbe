@@ -12,30 +12,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.twilio.Twilio;
-import com.twilio.rest.api.v2010.account.Message;
-import com.twilio.type.PhoneNumber;
-
-import jakarta.annotation.PostConstruct;
 
 @Service
 @Slf4j
 public class NotificationService {
-
-    @Value("${twilio.account-sid:}")
-    private String twilioSid;
-
-    @Value("${twilio.auth-token:}")
-    private String twilioToken;
-
-    @Value("${twilio.phone-number:}")
-    private String twilioNumber;
-
-    @Value("${twilio.whatsapp-enabled:false}")
-    private boolean twilioWhatsappEnabled;
-
-    @Value("${twilio.whatsapp-number:}")
-    private String twilioWhatsappNumber;
 
     @Value("${notifications.email.from:}")
     private String emailFrom;
@@ -43,62 +23,25 @@ public class NotificationService {
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
     private final UserRepository userRepository;
+    private final SmsProvider smsProvider;
 
     public NotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                                SimpMessagingTemplate messagingTemplate,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               SmsProvider smsProvider) {
         this.mailSender = mailSenderProvider.getIfAvailable();
         this.messagingTemplate = messagingTemplate;
         this.userRepository = userRepository;
-    }
-
-    @PostConstruct
-    public void init() {
-        if (!twilioSid.isBlank() && !twilioToken.isBlank()) {
-            Twilio.init(twilioSid, twilioToken);
-            log.info("Twilio notifications enabled");
-        } else {
-            log.warn("Twilio notifications disabled: missing account SID or auth token");
-        }
+        this.smsProvider = smsProvider;
     }
 
     public void sendSms(String to, String body) {
         log.info("Sending SMS notification to {} - Body: {}", to, body);
-        try {
-            if (!hasText(to) || !hasText(body)) {
-                log.warn("SMS skipped: destination or body missing");
-                return;
-            }
-            if (!isSmsConfigured()) {
-                log.warn("SMS skipped for {}: Twilio SMS is not fully configured", to);
-                return;
-            }
-
-            log.info("Sending SMS via Twilio to {} from {}", to, twilioNumber);
-            Message.creator(new PhoneNumber(to), new PhoneNumber(twilioNumber), body).create();
-        } catch (Exception e) {
-            log.warn("Failed to send SMS to {}: {}", to, e.getMessage(), e);
-        }
+        smsProvider.sendSms(to, body);
     }
 
     public void sendWhatsApp(String to, String body) {
-        try {
-            if (!hasText(to) || !hasText(body)) {
-                log.warn("WhatsApp skipped: destination or body missing");
-                return;
-            }
-            if (!isWhatsAppConfigured()) {
-                log.warn("WhatsApp skipped for {}: Twilio WhatsApp is not fully configured", to);
-                return;
-            }
-            Message.creator(
-                    new PhoneNumber(toWhatsAppAddress(to)),
-                    new PhoneNumber(toWhatsAppAddress(twilioWhatsappNumber)),
-                    body
-            ).create();
-        } catch (Exception e) {
-            log.warn("Failed to send WhatsApp message to {}: {}", to, e.getMessage(), e);
-        }
+        smsProvider.sendWhatsApp(to, body);
     }
 
     public void sendPhoneNotification(String to, String body) {
@@ -110,7 +53,7 @@ public class NotificationService {
         log.info("Proceeding with phone notification to {}", to);
 
         sendSms(to, body);
-        if (isWhatsAppConfigured()) {
+        if (smsProvider.isWhatsAppConfigured()) {
             sendWhatsApp(to, body);
         }
     }
@@ -197,21 +140,6 @@ public class NotificationService {
         } catch (Exception e) {
             log.warn("Failed to publish WebSocket alert for owner {}: {}", owner.getId(), e.getMessage(), e);
         }
-    }
-
-    private boolean isSmsConfigured() {
-        return hasText(twilioSid) && hasText(twilioToken) && hasText(twilioNumber);
-    }
-
-    private boolean isWhatsAppConfigured() {
-        return twilioWhatsappEnabled && hasText(twilioSid) && hasText(twilioToken) && hasText(twilioWhatsappNumber);
-    }
-
-    private String toWhatsAppAddress(String phoneNumber) {
-        if (phoneNumber.startsWith("whatsapp:")) {
-            return phoneNumber;
-        }
-        return "whatsapp:" + phoneNumber;
     }
 
     private boolean hasText(String value) {

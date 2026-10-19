@@ -9,6 +9,7 @@ import com.example.pettracker.repository.UserRepository;
 import com.example.pettracker.repository.VolunteerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Async;
@@ -267,11 +268,22 @@ public class VolunteerService {
         return volunteerRepository.findBySearchGroupIdAndActiveTrue(searchGroupId);
     }
 
+    public List<Volunteer> getActiveVolunteersForGroup(Long searchGroupId, Pageable pageable) {
+        return volunteerRepository.findBySearchGroupIdAndActiveTrue(searchGroupId, pageable);
+    }
+
     /**
      * Gets all search groups a user is volunteering for
      */
     public List<SearchGroup> getUserSearchGroups(Long userId) {
         List<Volunteer> volunteers = volunteerRepository.findByUserIdAndActiveTrue(userId);
+        return volunteers.stream()
+            .map(Volunteer::getSearchGroup)
+            .collect(Collectors.toList());
+    }
+
+    public List<SearchGroup> getUserSearchGroups(Long userId, Pageable pageable) {
+        List<Volunteer> volunteers = volunteerRepository.findByUserIdAndActiveTrue(userId, pageable);
         return volunteers.stream()
             .map(Volunteer::getSearchGroup)
             .collect(Collectors.toList());

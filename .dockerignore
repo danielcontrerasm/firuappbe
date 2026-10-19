@@ -1,0 +1,11 @@
+.git
+.gitignore
+.gradle
+.gradle-user-home
+.idea
+build
+.DS_Store
+**/.DS_Store
+HELP.md
+docker-compose.yml
+init.sql.yml

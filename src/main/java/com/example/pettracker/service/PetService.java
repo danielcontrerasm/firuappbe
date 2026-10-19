@@ -1,12 +1,28 @@
 package com.example.pettracker.service;
 
+import com.example.pettracker.dto.LocationDTO;
+import com.example.pettracker.dto.LocationRequest;
+import com.example.pettracker.dto.PetDto;
+import com.example.pettracker.dto.PetNeighborhoodDto;
+import com.example.pettracker.dto.PetWalkDistanceDayDto;
+import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
+import com.example.pettracker.mapper.PetMapper;
 import com.example.pettracker.repository.PetRepository;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Objects;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.Set;
 import java.util.List;
@@ -17,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class PetService {
     private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+    private static final int MAX_PAGE_SIZE = 100;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg",
             "image/png",
@@ -26,12 +43,153 @@ public class PetService {
 
     private final PetRepository petRepository;
     private final GpsIngestionService gpsIngestionService;
+    private final CurrentUserService currentUserService;
+    private final UserService userService;
+    private final LocationService locationService;
+    private final PetWalkDistanceService petWalkDistanceService;
+    private final PetMapper petMapper;
     @Autowired
     private LostPetNotificationService lostPetNotificationService;
 
-    public PetService(PetRepository petRepository, GpsIngestionService gpsIngestionService) {
+    public PetService(
+            PetRepository petRepository,
+            GpsIngestionService gpsIngestionService,
+            CurrentUserService currentUserService,
+            UserService userService,
+            LocationService locationService,
+            PetWalkDistanceService petWalkDistanceService,
+            PetMapper petMapper) {
         this.petRepository = petRepository;
         this.gpsIngestionService = gpsIngestionService;
+        this.currentUserService = currentUserService;
+        this.userService = userService;
+        this.locationService = locationService;
+        this.petWalkDistanceService = petWalkDistanceService;
+        this.petMapper = petMapper;
+    }
+
+    @Transactional(readOnly = true)
+    public List<LocationDTO> findLastLocationsForCurrentUser(Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        return locationService.findLastLocationsByUserId(user.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public List<PetDto> listForCurrentUser(Authentication authentication, int page, int size) {
+        User user = currentUserService.require(authentication);
+        return listForUser(user, page, size).stream()
+                .map(petMapper::toDtoWithNeighborhood)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PetDto getForCurrentUser(Long id, Authentication authentication) {
+        return petMapper.toDtoWithNeighborhood(requireAccessiblePet(id, authentication));
+    }
+
+    @Transactional
+    public PetDto create(PetDto request, MultipartFile image, Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        Pet pet = new Pet();
+        petMapper.applyToEntity(pet, request);
+        pet.setOwner(resolveOwner(user, request.ownerId()));
+
+        Pet saved = image == null ? create(pet) : create(pet, image);
+        return petMapper.toDtoWithNeighborhood(saved);
+    }
+
+    @Transactional
+    public PetDto update(Long id, PetDto request, MultipartFile image, Authentication authentication) {
+        Pet existing = requireAccessiblePet(id, authentication);
+        User user = currentUserService.require(authentication);
+        petMapper.applyToEntity(existing, request);
+        if (user.getRole() == User.Role.ADMIN && request.ownerId() != null) {
+            existing.setOwner(resolveOwner(user, request.ownerId()));
+        }
+
+        Pet saved = image == null ? update(existing) : update(existing, image);
+        return petMapper.toDtoWithNeighborhood(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public PetImage findAccessibleImageById(Long id, Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        PetImage image = findImageById(id);
+        if (image == null) {
+            throw notFound("Pet image not found");
+        }
+        if (user.getRole() != User.Role.ADMIN && !Objects.equals(user.getId(), image.ownerId())) {
+            throw forbidden();
+        }
+        return image;
+    }
+
+    @Transactional
+    public void delete(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        delete(id);
+    }
+
+    @Transactional
+    public PetDto markPetAsLost(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return petMapper.toDtoWithNeighborhood(markPetAsLost(id));
+    }
+
+    @Transactional
+    public PetDto markPetAsFound(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return petMapper.toDtoWithNeighborhood(markPetAsFound(id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<LocationDTO> getLocations(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return locationService.getByPetId(id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LocationDTO> getRouteLast3Hours(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return locationService.getPetRouteLast3Hours(id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LocationDTO> getRouteBetween(Long id, String from, String to, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return locationService.getPetRouteBetween(id, from, to);
+    }
+
+    @Transactional
+    public PetNeighborhoodDto getNeighborhood(Long id, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        Location latestLocation = locationService.getLatestByPetId(id);
+        if (latestLocation == null) {
+            throw notFound("Pet location not found");
+        }
+        return locationService.getNeighborhoodByPetId(id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PetWalkDistanceDayDto> getWeeklyWalkDistance(Long id, LocalDate weekStart, Authentication authentication) {
+        requireAccessiblePet(id, authentication);
+        return petWalkDistanceService.getWeeklyDistance(id, weekStart);
+    }
+
+    @Transactional
+    public LocationDTO addLocation(Long id, LocationRequest request, Authentication authentication) {
+        Pet pet = requireAccessiblePet(id, authentication);
+        LocalDateTime timestamp = locationService.parseRequestTimestamp(request.getTimestamp());
+        Location location = Location.builder()
+                .pet(pet)
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
+                .timestamp(timestamp)
+                .batteryPercent(request.getBatteryPercent())
+                .batteryVoltage(request.getBatteryVoltage())
+                .build();
+
+        return locationService.save(location);
     }
 
     public Pet create(Pet p) {
@@ -50,6 +208,55 @@ public class PetService {
     public List<Pet> listForUser(User user) {
         if (user.getRole() == User.Role.ADMIN) return petRepository.findAll();
         return petRepository.findByOwnerId(user.getId());
+    }
+
+    public List<Pet> listForUser(User user, int page, int size) {
+        Pageable pageable = pageRequest(page, size);
+        if (user.getRole() == User.Role.ADMIN) {
+            return petRepository.findAll(pageable).getContent();
+        }
+        return petRepository.findByOwnerId(user.getId(), pageable);
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "id"));
+    }
+
+    private Pet requireAccessiblePet(Long id, Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        Pet pet = petRepository.findById(id).orElseThrow(() -> notFound("Pet not found"));
+        if (!canAccessPet(user, pet)) {
+            throw forbidden();
+        }
+        return pet;
+    }
+
+    private boolean canAccessPet(User user, Pet pet) {
+        return user.getRole() == User.Role.ADMIN
+                || (pet.getOwner() != null
+                && pet.getOwner().getId() != null
+                && pet.getOwner().getId().equals(user.getId()));
+    }
+
+    private User resolveOwner(User currentUser, Long ownerId) {
+        if (currentUser.getRole() == User.Role.ADMIN && ownerId != null) {
+            User owner = userService.findById(ownerId);
+            if (owner == null) {
+                throw notFound("Owner not found");
+            }
+            return owner;
+        }
+        return currentUser;
+    }
+
+    private ResponseStatusException notFound(String reason) {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, reason);
+    }
+
+    private ResponseStatusException forbidden() {
+        return new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this pet");
     }
 
     public Pet findById(Long id) {
@@ -127,13 +334,16 @@ public class PetService {
     }
 
     public record PetImage(Long ownerId, byte[] data, String contentType, String fileName) {
+        public String fileNameOrDefault() {
+            return fileName == null || fileName.isBlank() ? "pet-image" : fileName;
+        }
     }
 
     public void delete(Long id) {
         Pet pet = petRepository.findById(id).orElse(null);
         petRepository.deleteById(id);
         if (pet != null) {
-            gpsIngestionService.evictPetCache(pet.getImei());
+            gpsIngestionService.evictPetCache(pet.getTerminalId());
         }
     }
     // ... existing code ...

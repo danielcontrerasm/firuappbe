@@ -11,6 +11,9 @@ import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
 import com.example.pettracker.service.VolunteerService;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/search-groups")
 public class SearchGroupController {
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final VolunteerService volunteerService;
     private final UserService userService;
@@ -98,15 +103,20 @@ public class SearchGroupController {
     }
 
     @GetMapping
-    public List<SearchGroupDto> listAll() {
-        return searchGroupRepository.findAll().stream()
+    public List<SearchGroupDto> listAll(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
                 .map(SearchGroupMapper::toDto)
                 .toList();
     }
 
     @GetMapping("/pet/{petId}")
-    public List<SearchGroupDto> listForPet(@PathVariable Long petId) {
-        return searchGroupRepository.findByPetId(petId).stream()
+    public List<SearchGroupDto> listForPet(
+            @PathVariable Long petId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toDto)
                 .toList();
     }
@@ -126,18 +136,30 @@ public class SearchGroupController {
     }
 
     @GetMapping("/{searchGroupId}/volunteers")
-    public List<VolunteerDto> volunteers(@PathVariable Long searchGroupId) {
-        return volunteerService.getActiveVolunteersForGroup(searchGroupId).stream()
+    public List<VolunteerDto> volunteers(
+            @PathVariable Long searchGroupId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        return volunteerService.getActiveVolunteersForGroup(searchGroupId, pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toDto)
                 .toList();
     }
 
     @GetMapping("/my")
-    public List<SearchGroupDto> myGroups(Authentication authentication) {
+    public List<SearchGroupDto> myGroups(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
         User user = currentUser(authentication);
-        return volunteerService.getUserSearchGroups(user.getId()).stream()
+        return volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toDto)
                 .toList();
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
     }
 
     private User currentUser(Authentication authentication) {

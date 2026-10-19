@@ -4,6 +4,7 @@ import com.example.pettracker.entity.User;
 import com.example.pettracker.transit.entity.TransitVehicle;
 import com.example.pettracker.transit.repository.TransitVehicleRepository;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,6 +21,13 @@ public class TransitVehicleService {
             return transitVehicleRepository.findAll();
         }
         return transitVehicleRepository.findByOwnerId(user.getId());
+    }
+
+    public List<TransitVehicle> listForUser(User user, Pageable pageable) {
+        if (user.getRole() == User.Role.ADMIN) {
+            return transitVehicleRepository.findAll(pageable).getContent();
+        }
+        return transitVehicleRepository.findByOwnerId(user.getId(), pageable);
     }
 
     public TransitVehicle findById(Long id) {

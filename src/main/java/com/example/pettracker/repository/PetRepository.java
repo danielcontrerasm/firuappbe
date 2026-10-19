@@ -3,6 +3,8 @@ package com.example.pettracker.repository;
 import com.example.pettracker.entity.Pet;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -14,10 +16,17 @@ public interface PetRepository extends JpaRepository<Pet, Long> {
 
     @Override
     @EntityGraph(attributePaths = "owner")
+    Page<Pet> findAll(Pageable pageable);
+
+    @Override
+    @EntityGraph(attributePaths = "owner")
     Optional<Pet> findById(Long id);
 
     @EntityGraph(attributePaths = "owner")
     List<Pet> findByOwnerId(Long ownerId);
+
+    @EntityGraph(attributePaths = "owner")
+    List<Pet> findByOwnerId(Long ownerId, Pageable pageable);
 
     @EntityGraph(attributePaths = "owner")
     Optional<Pet> findByOwnerIdAndNameIgnoreCase(Long ownerId, String name);

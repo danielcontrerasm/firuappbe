@@ -10,6 +10,9 @@ import com.example.pettracker.transit.mapper.TransitMapper;
 import com.example.pettracker.transit.service.TransitSearchGroupService;
 import com.example.pettracker.transit.service.TransitVehicleService;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -18,11 +21,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/transit/search-groups")
 public class TransitSearchGroupController {
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final TransitSearchGroupService transitSearchGroupService;
     private final TransitVehicleService transitVehicleService;
@@ -54,8 +60,11 @@ public class TransitSearchGroupController {
     }
 
     @GetMapping("/vehicle/{vehicleId}")
-    public ResponseEntity<List<TransitSearchGroupDto>> listForVehicle(@PathVariable Long vehicleId) {
-        return ResponseEntity.ok(transitSearchGroupService.listForVehicle(vehicleId).stream()
+    public ResponseEntity<List<TransitSearchGroupDto>> listForVehicle(
+            @PathVariable Long vehicleId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+        return ResponseEntity.ok(transitSearchGroupService.listForVehicle(vehicleId, pageRequest(page, size)).stream()
                 .map(TransitMapper::toDto)
                 .toList());
     }
@@ -76,11 +85,20 @@ public class TransitSearchGroupController {
     }
 
     @GetMapping("/my")
-    public List<TransitSearchGroupDto> myGroups(Authentication authentication) {
+    public List<TransitSearchGroupDto> myGroups(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
         User user = currentUser(authentication);
-        return transitSearchGroupService.listForUser(user.getId()).stream()
+        return transitSearchGroupService.listForUser(user.getId(), pageRequest(page, size)).stream()
                 .map(TransitMapper::toDto)
                 .toList();
+    }
+
+    private Pageable pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
     }
 
     private User currentUser(Authentication authentication) {

@@ -37,6 +37,11 @@ public record AdminMetricsDto(
     ) {}
 
     public record GpsMetrics(
-            long droppedTasks
+            long droppedTasks,
+            boolean messageQueueEnabled,
+            int messageQueueDepth,
+            long enqueuedMessages,
+            long processedQueuedMessages,
+            long droppedMessages
     ) {}
 }

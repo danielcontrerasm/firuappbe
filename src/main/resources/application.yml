@@ -86,6 +86,15 @@ notifications:
   email:
     from: ${NOTIFICATIONS_EMAIL_FROM:}
 
+app:
+  cache:
+    user-by-email:
+      maximum-size: ${USER_BY_EMAIL_CACHE_MAXIMUM_SIZE:5000}
+      ttl: ${USER_BY_EMAIL_CACHE_TTL:PT5M}
+    pet-access-by-id:
+      maximum-size: ${PET_ACCESS_CACHE_MAXIMUM_SIZE:10000}
+      ttl: ${PET_ACCESS_CACHE_TTL:PT10M}
+
 gps:
   listener:
     port: 5000
@@ -93,6 +102,15 @@ gps:
     core-threads: ${GPS_INGESTION_CORE_THREADS:2}
     max-threads: ${GPS_INGESTION_MAX_THREADS:4}
     queue-capacity: ${GPS_INGESTION_QUEUE_CAPACITY:500}
+    message-queue:
+      enabled: ${GPS_INGESTION_MESSAGE_QUEUE_ENABLED:false}
+      capacity: ${GPS_INGESTION_MESSAGE_QUEUE_CAPACITY:10000}
+      consumers: ${GPS_INGESTION_MESSAGE_QUEUE_CONSUMERS:1}
+  cache:
+    pet-by-terminal-id:
+      maximum-size: ${GPS_PET_CACHE_MAXIMUM_SIZE:10000}
+      known-ttl: ${GPS_PET_CACHE_KNOWN_TTL:PT24H}
+      unknown-ttl: ${GPS_PET_CACHE_UNKNOWN_TTL:PT1M}
 
 logging:
   level:

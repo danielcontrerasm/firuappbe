@@ -24,6 +24,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,6 +75,10 @@ public class TransitGeofencingService {
 
     public List<TransitScheduledGeofence> getVehicleGeofences(Long vehicleId) {
         return transitScheduledGeofenceRepository.findByVehicleId(vehicleId);
+    }
+
+    public List<TransitScheduledGeofence> getVehicleGeofences(Long vehicleId, Pageable pageable) {
+        return transitScheduledGeofenceRepository.findByVehicleId(vehicleId, pageable);
     }
 
     public TransitScheduledGeofence findById(Long id) {

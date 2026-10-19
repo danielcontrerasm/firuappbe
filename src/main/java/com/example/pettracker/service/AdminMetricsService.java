@@ -50,7 +50,14 @@ public class AdminMetricsService {
                 ),
                 databaseMetrics,
                 poolMetrics,
-                new GpsMetrics(gpsIngestionService.getDroppedTasks())
+                new GpsMetrics(
+                        gpsIngestionService.getDroppedTasks(),
+                        gpsIngestionService.isMessageQueueEnabled(),
+                        gpsIngestionService.getMessageQueueDepth(),
+                        gpsIngestionService.getEnqueuedMessages(),
+                        gpsIngestionService.getProcessedQueuedMessages(),
+                        gpsIngestionService.getDroppedMessages()
+                )
         );
     }
 
