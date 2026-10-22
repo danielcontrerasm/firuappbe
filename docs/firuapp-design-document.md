@@ -97,7 +97,8 @@ This document defines the current system design, functional and non-functional r
 
 ### Lost Pet Search
 
-- Owners can create search groups for lost pets.
+- Owners can create and update search groups for lost pets.
+- Group owners and admins can add or remove registered users as volunteers.
 - Volunteers can join and leave search groups.
 - Search groups expose volunteer lists.
 - Volunteers can receive notifications for lost-pet/geofence events.
@@ -505,8 +506,13 @@ sequenceDiagram
 - `DELETE /api/geofences/{petId}`
 - `POST /api/search-groups`
 - `GET /api/search-groups`
+- `PUT /api/search-groups/{id}`
 - `POST /api/search-groups/{id}/join`
 - `POST /api/search-groups/{id}/leave`
+- `GET /api/search-groups/{id}/volunteers`
+- `GET /api/search-groups/{id}/member-candidates?q={nameOrEmail}`
+- `POST /api/search-groups/{id}/volunteers/{userId}`
+- `DELETE /api/search-groups/{id}/volunteers/{userId}`
 - `POST /api/walk-requests`
 - `GET /api/walk-requests`
 - `GET /api/walk-requests/{id}`

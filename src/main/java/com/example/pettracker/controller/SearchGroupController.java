@@ -2,6 +2,8 @@ package com.example.pettracker.controller;
 
 import com.example.pettracker.dto.SearchGroupCreateRequest;
 import com.example.pettracker.dto.SearchGroupDto;
+import com.example.pettracker.dto.SearchGroupUpdateRequest;
+import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.dto.VolunteerDto;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
@@ -18,9 +20,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SearchGroupController {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_CANDIDATE_PAGE_SIZE = 20;
 
     private final VolunteerService volunteerService;
     private final UserService userService;
@@ -63,10 +68,9 @@ public class SearchGroupController {
                 request.leaderName(),
                 request.leaderPhone(),
                 request.coverageRadiusKm(),
+                request.volunteerUserIds(),
                 authentication);
     }
-
-
 
     private ResponseEntity<SearchGroupDto> createSearchGroup(
             Long petId,
@@ -78,6 +82,7 @@ public class SearchGroupController {
             String leaderName,
             String leaderPhone,
             Double coverageRadiusKm,
+            List<Long> volunteerUserIds,
             Authentication authentication) {
         User user = currentUser(authentication);
         Pet pet = petService.findById(petId);
@@ -99,7 +104,17 @@ public class SearchGroupController {
                         city,
                         leaderName,
                         leaderPhone,
-                        coverageRadiusKm)));
+                        coverageRadiusKm,
+                        volunteerUserIds)));
+    }
+
+    @PutMapping(path = "/{searchGroupId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public SearchGroupDto update(
+            @PathVariable Long searchGroupId,
+            @RequestBody SearchGroupUpdateRequest request,
+            Authentication authentication) {
+        return SearchGroupMapper.toDto(
+                volunteerService.updateSearchGroup(searchGroupId, currentUser(authentication), request));
     }
 
     @GetMapping
@@ -126,6 +141,39 @@ public class SearchGroupController {
         User user = currentUser(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(SearchGroupMapper.toDto(volunteerService.joinSearchGroup(user.getId(), searchGroupId)));
+    }
+
+    @PostMapping("/{searchGroupId}/volunteers/{userId}")
+    public ResponseEntity<VolunteerDto> addVolunteer(
+            @PathVariable Long searchGroupId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+        VolunteerDto volunteer = SearchGroupMapper.toDto(
+                volunteerService.addVolunteer(searchGroupId, userId, currentUser(authentication)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(volunteer);
+    }
+
+    @DeleteMapping("/{searchGroupId}/volunteers/{userId}")
+    public ResponseEntity<Void> removeVolunteer(
+            @PathVariable Long searchGroupId,
+            @PathVariable Long userId,
+            Authentication authentication) {
+        volunteerService.removeVolunteer(searchGroupId, userId, currentUser(authentication));
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{searchGroupId}/member-candidates")
+    public List<VolunteerCandidateDto> memberCandidates(
+            @PathVariable Long searchGroupId,
+            @RequestParam String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Authentication authentication) {
+        return volunteerService.searchVolunteerCandidates(
+                searchGroupId,
+                q,
+                currentUser(authentication),
+                candidatePageRequest(page, size));
     }
 
     @PostMapping("/{searchGroupId}/leave")
@@ -160,6 +208,12 @@ public class SearchGroupController {
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
+    }
+
+    private Pageable candidatePageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_CANDIDATE_PAGE_SIZE));
+        return PageRequest.of(safePage, safeSize, Sort.by("name").ascending().and(Sort.by("email").ascending()));
     }
 
     private User currentUser(Authentication authentication) {

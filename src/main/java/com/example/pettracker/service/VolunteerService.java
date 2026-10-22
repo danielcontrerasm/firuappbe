@@ -4,6 +4,8 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
+import com.example.pettracker.dto.SearchGroupUpdateRequest;
+import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.repository.UserRepository;
 import com.example.pettracker.repository.VolunteerRepository;
@@ -16,8 +18,9 @@ import org.springframework.scheduling.annotation.Async;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -40,28 +43,14 @@ public class VolunteerService {
         SearchGroup searchGroup = searchGroupRepository.findById(searchGroupId)
             .orElseThrow(() -> new RuntimeException("Search group not found with id: " + searchGroupId));
 
-        // Check if already a volunteer in this group
-        Volunteer existingVolunteer = volunteerRepository
-            .findByUserIdAndSearchGroupId(userId, searchGroupId);
-
-        if (existingVolunteer != null && existingVolunteer.getActive()) {
+        Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
+        if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getActive())) {
             log.warn("User {} is already an active volunteer in search group {}", userId, searchGroupId);
             return existingVolunteer;
         }
 
-        Volunteer volunteer = Volunteer.builder()
-            .user(user)
-            .searchGroup(searchGroup)
-            .active(true)
-            .joinedAt(Instant.now())
-            .build();
-
-        Volunteer savedVolunteer = volunteerRepository.save(volunteer);
+        Volunteer savedVolunteer = addVolunteerMembership(searchGroup, user);
         log.info("User {} joined search group {} as volunteer", userId, searchGroupId);
-
-        // Add volunteer to search group's volunteer list
-        searchGroup.getVolunteers().add(user);
-        searchGroupRepository.save(searchGroup);
 
         // Send confirmation notification
         sendVolunteerJoinedNotification(user, searchGroup);
@@ -108,7 +97,9 @@ public class VolunteerService {
             String city,
             String leaderName,
             String leaderPhone,
-            Double coverageRadiusKm) {
+            Double coverageRadiusKm,
+            List<Long> volunteerUserIds) {
+        validateCoverageRadius(coverageRadiusKm);
         SearchGroup searchGroup = SearchGroup.builder()
             .pet(lostPet)
             .createdBy(petOwner)
@@ -124,12 +115,138 @@ public class VolunteerService {
             .build();
 
         SearchGroup savedGroup = searchGroupRepository.save(searchGroup);
+        addVolunteerMembership(savedGroup, petOwner);
+        if (volunteerUserIds != null) {
+            volunteerUserIds.stream()
+                    .filter(id -> id != null && !id.equals(petOwner.getId()))
+                    .distinct()
+                    .map(id -> userRepository.findById(id)
+                            .orElseThrow(() -> new RuntimeException("Volunteer not found with id: " + id)))
+                    .forEach(user -> {
+                        addVolunteerMembership(savedGroup, user);
+                        notifyAddedVolunteer(user, savedGroup);
+                    });
+        }
         log.info("Created search group {} for lost pet {}", savedGroup.getId(), lostPet.getId());
 
         // Notify nearby volunteers asynchronously
         notifyNearbyVolunteers(lostPet, savedGroup);
 
         return savedGroup;
+    }
+
+    public SearchGroup updateSearchGroup(Long searchGroupId, User actingUser, SearchGroupUpdateRequest request) {
+        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        requireGroupManager(actingUser, searchGroup);
+        validateCoverageRadius(request.coverageRadiusKm());
+
+        if (request.groupName() != null) {
+            if (request.groupName().isBlank()) {
+                throw new RuntimeException("groupName cannot be blank");
+            }
+            searchGroup.setGroupName(request.groupName());
+        }
+        if (request.description() != null) searchGroup.setDescription(request.description());
+        if (request.status() != null) {
+            if (request.status().isBlank()) {
+                throw new RuntimeException("status cannot be blank");
+            }
+            searchGroup.setStatus(request.status());
+        }
+        if (request.area() != null) searchGroup.setArea(request.area());
+        if (request.city() != null) searchGroup.setCity(request.city());
+        if (request.leaderName() != null) searchGroup.setLeaderName(request.leaderName());
+        if (request.leaderPhone() != null) searchGroup.setLeaderPhone(request.leaderPhone());
+        if (request.coverageRadiusKm() != null) searchGroup.setCoverageRadiusKm(request.coverageRadiusKm());
+        return searchGroupRepository.save(searchGroup);
+    }
+
+    public Volunteer addVolunteer(Long searchGroupId, Long userId, User actingUser) {
+        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        requireGroupManager(actingUser, searchGroup);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        Volunteer volunteer = addVolunteerMembership(searchGroup, user);
+        notifyAddedVolunteer(user, searchGroup);
+        return volunteer;
+    }
+
+    public void removeVolunteer(Long searchGroupId, Long userId, User actingUser) {
+        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        requireGroupManager(actingUser, searchGroup);
+        if (searchGroup.getCreatedBy() != null && userId.equals(searchGroup.getCreatedBy().getId())) {
+            throw new RuntimeException("The group creator cannot be removed");
+        }
+        leaveSearchGroup(userId, searchGroupId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<VolunteerCandidateDto> searchVolunteerCandidates(
+            Long searchGroupId,
+            String query,
+            User actingUser,
+            Pageable pageable) {
+        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        requireGroupManager(actingUser, searchGroup);
+        String normalizedQuery = query == null ? "" : query.trim();
+        if (normalizedQuery.length() < 2) {
+            throw new RuntimeException("q must contain at least 2 characters");
+        }
+        if (normalizedQuery.length() > 100) {
+            throw new RuntimeException("q cannot exceed 100 characters");
+        }
+        return userRepository.searchVolunteerCandidates(searchGroupId, normalizedQuery, pageable);
+    }
+
+    private Volunteer addVolunteerMembership(SearchGroup searchGroup, User user) {
+        Volunteer volunteer = volunteerRepository.findByUserIdAndSearchGroupId(user.getId(), searchGroup.getId());
+        if (volunteer == null) {
+            volunteer = Volunteer.builder()
+                    .user(user)
+                    .searchGroup(searchGroup)
+                    .active(true)
+                    .joinedAt(Instant.now())
+                    .build();
+        } else {
+            volunteer.setActive(true);
+            volunteer.setJoinedAt(Instant.now());
+        }
+        Volunteer savedVolunteer = volunteerRepository.save(volunteer);
+        searchGroup.getVolunteers().add(user);
+        searchGroupRepository.save(searchGroup);
+        return savedVolunteer;
+    }
+
+    private SearchGroup requireSearchGroup(Long searchGroupId) {
+        return searchGroupRepository.findById(searchGroupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found"));
+    }
+
+    private void requireGroupManager(User actingUser, SearchGroup searchGroup) {
+        boolean admin = actingUser != null && actingUser.getRole() == User.Role.ADMIN;
+        boolean creator = actingUser != null && searchGroup.getCreatedBy() != null
+                && actingUser.getId().equals(searchGroup.getCreatedBy().getId());
+        boolean petOwner = actingUser != null && searchGroup.getPet() != null && searchGroup.getPet().getOwner() != null
+                && actingUser.getId().equals(searchGroup.getPet().getOwner().getId());
+        if (!admin && !creator && !petOwner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group owner or an admin can manage this group");
+        }
+    }
+
+    private void validateCoverageRadius(Double coverageRadiusKm) {
+        if (coverageRadiusKm != null && coverageRadiusKm < 0) {
+            throw new RuntimeException("coverageRadiusKm cannot be negative");
+        }
+    }
+
+    private void notifyAddedVolunteer(User volunteer, SearchGroup searchGroup) {
+        String message = "You were added to search group '" + searchGroup.getGroupName() + "'";
+        if (volunteer.getPhone() != null && !volunteer.getPhone().isBlank()) {
+            notificationService.sendPhoneNotification(volunteer.getPhone(), message);
+        }
+        if (volunteer.getEmail() != null && !volunteer.getEmail().isBlank()) {
+            notificationService.sendEmail(volunteer.getEmail(), "Pet search group", message);
+        }
     }
 
     /**
