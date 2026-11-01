@@ -46,7 +46,8 @@ You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps
 ### Railway behavior in this repo
 
 - HTTP/Tomcat port is fixed at `8080`.
-- GPS TCP listener uses port `5000`.
+- GPS TCP listener uses port `5000` and detects V41, bracket ASCII, and Topin (`7878`) per connection.
+- For Topin devices, register the 15-digit IMEI as the pet terminal ID. Unknown devices are disconnected at login. Valid, recent, non-historical fixes use the shared persistence and geofence pipeline; status packets supply battery percentage for subsequent fixes on that connection. Topin replies use the `TRACCAR_COMPATIBLE` profile.
 - If Railway injects `DATABASE_URL`, `DATABASE_PRIVATE_URL`, or `DATABASE_PUBLIC_URL`, the app converts it to a JDBC URL automatically.
 - Railway deployments now fail fast if `JWT_SECRET` is missing or still using the development fallback.
 

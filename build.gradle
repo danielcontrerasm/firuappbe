@@ -6,6 +6,11 @@ plugins {
 
 group = 'com.example'
 version = '1.0.0'
+
+springBoot {
+    mainClass = 'com.example.pettracker.PettrackerApplication'
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21) // or 21 if you prefer

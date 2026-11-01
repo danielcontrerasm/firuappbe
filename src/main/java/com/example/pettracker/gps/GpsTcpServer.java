@@ -1,7 +1,7 @@
 // com.example.pettracker.gps.GpsTcpServer
 package com.example.pettracker.gps;
 
-import com.example.pettracker.gps.protocol.v41.V41FrameDecoder;
+import com.example.pettracker.service.GpsIngestionService;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -26,8 +26,11 @@ public class GpsTcpServer {
 
     private final GpsMessageHandler handler;
 
-    public GpsTcpServer(GpsMessageHandler handler) {
+    private final GpsIngestionService ingestion;
+
+    public GpsTcpServer(GpsMessageHandler handler, GpsIngestionService ingestion) {
         this.handler = handler;
+        this.ingestion = ingestion;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -44,8 +47,7 @@ public class GpsTcpServer {
              protected void initChannel(io.netty.channel.socket.SocketChannel ch) {
                  log.info("Accepted GPS TCP channel remote={} local={}", ch.remoteAddress(), ch.localAddress());
                  ch.pipeline()
-                   .addLast(new V41FrameDecoder())
-                   .addLast(handler);
+                   .addLast(new GpsProtocolDetector(handler, ingestion));
              }
          });
 

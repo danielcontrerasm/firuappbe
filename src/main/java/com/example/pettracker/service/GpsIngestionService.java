@@ -155,6 +155,10 @@ public class GpsIngestionService {
         submitGpsTask(message.taskName(), () -> persistDecodedLocation(message));
     }
 
+    public boolean isKnownTerminalId(String terminalId) {
+        return findPetByTerminalIdCached(terminalId).isPresent();
+    }
+
     public void evictPetCache(String terminalId) {
         if (terminalId == null || terminalId.isBlank()) {
             return;
