@@ -19,18 +19,19 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
     private final Duration maxPastAge;
     private final boolean syncTimeOnLogin;
     private String imei;
+    private boolean closingAfterError;
 
     public TopinSessionHandler(Predicate<String> knownImei, TopinReplyProfile profile) {
         this(knownImei, profile, Clock.systemUTC(), Duration.ofMinutes(5), true);
     }
 
     public TopinSessionHandler(Predicate<String> knownImei, TopinReplyProfile profile, Clock clock,
-                              Duration maxFutureSkew, boolean syncTimeOnLogin) {
+                               Duration maxFutureSkew, boolean syncTimeOnLogin) {
         this(knownImei, profile, clock, maxFutureSkew, Duration.ofMinutes(10), syncTimeOnLogin);
     }
 
     public TopinSessionHandler(Predicate<String> knownImei, TopinReplyProfile profile, Clock clock,
-                              Duration maxFutureSkew, Duration maxPastAge, boolean syncTimeOnLogin) {
+                               Duration maxFutureSkew, Duration maxPastAge, boolean syncTimeOnLogin) {
         this.knownImei = Objects.requireNonNull(knownImei);
         this.profile = Objects.requireNonNull(profile);
         this.clock = Objects.requireNonNull(clock);
@@ -57,6 +58,13 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
             send(ctx, TopinReplies.acceptedLogin(login.declaredLength(), profile));
             if (syncTimeOnLogin) send(ctx, TopinReplies.utcTime(receivedAt));
         } else if (imei == null) {
+            if (message instanceof TopinMessage.SettingsRequest || message instanceof TopinMessage.DeviceInfo) {
+                // Some firmware sends control/metadata before identification. Consume it without
+                // assigning a device identity, publishing a position, or sending guessed settings.
+                LOG.log(System.Logger.Level.DEBUG, "Topin pre-login control consumed; awaiting IMEI, type="
+                        + Integer.toHexString(message.type()));
+                return;
+            }
             LOG.log(System.Logger.Level.WARNING, "Topin packet before login; closing connection");
             ctx.close();
             return;
@@ -86,6 +94,8 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        if (closingAfterError) return;
+        closingAfterError = true;
         LOG.log(System.Logger.Level.WARNING, "Topin connection closed: " + cause.getMessage());
         ctx.close();
     }

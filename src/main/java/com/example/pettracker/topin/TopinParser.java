@@ -1,5 +1,6 @@
 package com.example.pettracker.topin;
 
+import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -37,6 +38,21 @@ public final class TopinParser {
             case 0x30 -> {
                 exactLength(packet, payload, 0);
                 yield new TopinMessage.TimeRequest(packet.declaredLength());
+            }
+            case 0x57 -> {
+                exactLength(packet, payload, 0);
+                yield new TopinMessage.SettingsRequest(packet.declaredLength());
+            }
+            case 0xfc -> {
+                // The length convention is validated by the FC-specific framer profile.
+                boolean printable = true;
+                for (byte value : payload) {
+                    int valueUnsigned = unsigned(value);
+                    if (valueUnsigned < 0x20 || valueUnsigned > 0x7e) { printable = false; break; }
+                }
+                yield new TopinMessage.DeviceInfo(packet.declaredLength(),
+                        printable ? new String(payload, StandardCharsets.US_ASCII) : null,
+                        HexFormat.of().formatHex(payload));
             }
             case 0x94, 0x99 -> {
                 exactLength(packet, payload, 0);

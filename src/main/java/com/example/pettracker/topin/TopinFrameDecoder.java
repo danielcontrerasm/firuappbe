@@ -14,8 +14,14 @@ import java.util.List;
  * Unsupported profiles fail visibly instead of guessing a boundary or creating a false position.
  */
 public final class TopinFrameDecoder extends ByteToMessageDecoder {
+    private boolean failed;
+
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
+        if (failed) {
+            in.skipBytes(in.readableBytes());
+            return;
+        }
         if (in.readableBytes() < 4) return;
         int start = in.readerIndex();
         if (in.getUnsignedShort(start) != 0x7878) {
@@ -52,7 +58,10 @@ public final class TopinFrameDecoder extends ByteToMessageDecoder {
                 case 0x0a -> 15;
                 default -> -1;
             };
-            case 0x14, 0x30, 0x94, 0x99 -> length == 1 ? 6 : -1;
+            case 0x14, 0x30, 0x57, 0x94, 0x99 -> length == 1 ? 6 : -1;
+            // Captured G68P profile: length counts type + payload; maximum total 260 bytes.
+            // Keep this rule specific to FC. Other Topin messages have different length rules.
+            case 0xfc -> length >= 1 ? length + 5 : -1;
             default -> -1;
         };
     }
@@ -65,8 +74,12 @@ public final class TopinFrameDecoder extends ByteToMessageDecoder {
         }
     }
 
-    private static CorruptedFrameException failure(String message, ByteBuf in) {
+    private CorruptedFrameException failure(String message, ByteBuf in) {
         String prefix = ByteBufUtil.hexDump(in, in.readerIndex(), Math.min(in.readableBytes(), 64));
-        return new CorruptedFrameException(message + "; available=" + in.readableBytes() + "; hexPrefix=" + prefix);
+        int available = in.readableBytes();
+        failed = true;
+        // This is a fatal framing failure. Closing must not re-decode and report the same bytes.
+        in.skipBytes(available);
+        return new CorruptedFrameException(message + "; available=" + available + "; hexPrefix=" + prefix);
     }
 }

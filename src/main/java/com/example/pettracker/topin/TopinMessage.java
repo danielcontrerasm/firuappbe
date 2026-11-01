@@ -74,6 +74,19 @@ public sealed interface TopinMessage {
         }
     }
 
+    /** Device requests settings; the ingest-only policy does not send configuration changes. */
+    record SettingsRequest(int declaredLength) implements TopinMessage {
+        @Override public int type() { return 0x57; }
+    }
+
+    /**
+     * Opaque vendor information captured in G68P message FC. ascii is null for non-printable
+     * data; payloadHex always preserves the bytes. It is not a GPS position or timestamp.
+     */
+    record DeviceInfo(int declaredLength, String ascii, String payloadHex) implements TopinMessage {
+        @Override public int type() { return 0xfc; }
+    }
+
     record Alarm(int declaredLength, int type, String name) implements TopinMessage {
     }
 
