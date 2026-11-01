@@ -43,15 +43,16 @@ public final class TopinParser {
                 exactLength(packet, payload, 0);
                 yield new TopinMessage.SettingsRequest(packet.declaredLength());
             }
+            case 0xb3 -> {
+                String ascii = printableAscii(payload);
+                String iccid = ascii != null && ascii.matches("[0-9]{19,20}") ? ascii : null;
+                yield new TopinMessage.SimInfo(packet.declaredLength(), iccid, ascii,
+                        HexFormat.of().formatHex(payload));
+            }
             case 0xfc -> {
                 // The length convention is validated by the FC-specific framer profile.
-                boolean printable = true;
-                for (byte value : payload) {
-                    int valueUnsigned = unsigned(value);
-                    if (valueUnsigned < 0x20 || valueUnsigned > 0x7e) { printable = false; break; }
-                }
                 yield new TopinMessage.DeviceInfo(packet.declaredLength(),
-                        printable ? new String(payload, StandardCharsets.US_ASCII) : null,
+                        printableAscii(payload),
                         HexFormat.of().formatHex(payload));
             }
             case 0x94, 0x99 -> {
@@ -173,6 +174,14 @@ public final class TopinParser {
 
     private static int unsigned(byte value) {
         return value & 0xff;
+    }
+
+    private static String printableAscii(byte[] payload) {
+        for (byte value : payload) {
+            int valueUnsigned = unsigned(value);
+            if (valueUnsigned < 0x20 || valueUnsigned > 0x7e) return null;
+        }
+        return new String(payload, StandardCharsets.US_ASCII);
     }
 
     private static int unsignedShort(byte[] p, int index) {

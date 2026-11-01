@@ -58,7 +58,8 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
             send(ctx, TopinReplies.acceptedLogin(login.declaredLength(), profile));
             if (syncTimeOnLogin) send(ctx, TopinReplies.utcTime(receivedAt));
         } else if (imei == null) {
-            if (message instanceof TopinMessage.SettingsRequest || message instanceof TopinMessage.DeviceInfo) {
+            if (message instanceof TopinMessage.SettingsRequest || message instanceof TopinMessage.DeviceInfo
+                    || message instanceof TopinMessage.SimInfo) {
                 // Some firmware sends control/metadata before identification. Consume it without
                 // assigning a device identity, publishing a position, or sending guessed settings.
                 LOG.log(System.Logger.Level.DEBUG, "Topin pre-login control consumed; awaiting IMEI, type="

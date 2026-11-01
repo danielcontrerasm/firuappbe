@@ -87,6 +87,15 @@ public sealed interface TopinMessage {
         @Override public int type() { return 0xfc; }
     }
 
+    /**
+     * SIM identification, distinct from the tracker's IMEI. iccid is populated only for a
+     * plain 19-20 digit ASCII value. Other vendor formatting stays in rawAscii/payloadHex.
+     * This report cannot authenticate a channel or provide a GPS position.
+     */
+    record SimInfo(int declaredLength, String iccid, String rawAscii, String payloadHex) implements TopinMessage {
+        @Override public int type() { return 0xb3; }
+    }
+
     record Alarm(int declaredLength, int type, String name) implements TopinMessage {
     }
 

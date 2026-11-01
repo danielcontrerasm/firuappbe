@@ -55,13 +55,14 @@ public final class TopinFrameDecoder extends ByteToMessageDecoder {
             case 0x13 -> switch (length) {
                 case 0x06 -> 10;
                 case 0x07 -> 11;
-                case 0x0a -> 15;
-                default -> -1;
+                // Extended status uses type + payload as length (observed 0A and 16).
+                // Preserve unknown extension bytes; keep legacy 06/07 exceptions above.
+                default -> length >= 0x08 ? length + 5 : -1;
             };
             case 0x14, 0x30, 0x57, 0x94, 0x99 -> length == 1 ? 6 : -1;
-            // Captured G68P profile: length counts type + payload; maximum total 260 bytes.
-            // Keep this rule specific to FC. Other Topin messages have different length rules.
-            case 0xfc -> length >= 1 ? length + 5 : -1;
+            // Captured G68P metadata profiles: length counts type + payload; maximum total 260 bytes.
+            // Keep this rule specific to B3/FC. Other Topin messages have different length rules.
+            case 0xb3, 0xfc -> length >= 1 ? length + 5 : -1;
             default -> -1;
         };
     }
