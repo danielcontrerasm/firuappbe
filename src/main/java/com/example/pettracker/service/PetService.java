@@ -32,7 +32,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Slf4j
 public class PetService {
-    private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
     private static final int MAX_PAGE_SIZE = 100;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg",
@@ -48,6 +47,7 @@ public class PetService {
     private final LocationService locationService;
     private final PetWalkDistanceService petWalkDistanceService;
     private final PetMapper petMapper;
+    private final ImageUploadLimits imageUploadLimits;
     @Autowired
     private LostPetNotificationService lostPetNotificationService;
 
@@ -58,7 +58,8 @@ public class PetService {
             UserService userService,
             LocationService locationService,
             PetWalkDistanceService petWalkDistanceService,
-            PetMapper petMapper) {
+            PetMapper petMapper,
+            ImageUploadLimits imageUploadLimits) {
         this.petRepository = petRepository;
         this.gpsIngestionService = gpsIngestionService;
         this.currentUserService = currentUserService;
@@ -66,6 +67,7 @@ public class PetService {
         this.locationService = locationService;
         this.petWalkDistanceService = petWalkDistanceService;
         this.petMapper = petMapper;
+        this.imageUploadLimits = imageUploadLimits;
     }
 
     @Transactional(readOnly = true)
@@ -328,9 +330,7 @@ public class PetService {
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
             throw new IllegalArgumentException("Pet image must be JPEG, PNG, WebP, or GIF");
         }
-        if (image.getSize() > MAX_IMAGE_SIZE_BYTES) {
-            throw new IllegalArgumentException("Pet image must be 5MB or smaller");
-        }
+        imageUploadLimits.validateImageSize(image.getSize());
     }
 
     public record PetImage(Long ownerId, byte[] data, String contentType, String fileName) {

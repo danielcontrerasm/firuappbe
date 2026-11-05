@@ -18,8 +18,8 @@ spring:
       continue-on-error: ${SPRING_SQL_INIT_CONTINUE_ON_ERROR:true}
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:20MB}
+      max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:21MB}
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pettracker}
     username: ${SPRING_DATASOURCE_USERNAME:petuser}
@@ -123,6 +123,8 @@ server:
     mime-types: application/json,text/html,text/xml,text/plain,text/css,application/javascript
     min-response-size: 1024
   tomcat:
+    # Drain rejected uploads within the request budget so clients can receive the 413 response.
+    max-swallow-size: ${spring.servlet.multipart.max-request-size}
     threads:
       max: ${SERVER_TOMCAT_THREADS_MAX:200}
       min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}

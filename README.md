@@ -57,3 +57,5 @@ You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps
 ### Local development
 
 Use `.env.example` as the variable template for local runs.
+
+Pet image uploads use `POST /api/pets` or `PUT /api/pets/{id}` with multipart parts named `pet` (`application/json`) and `image` (the file). For browser `FormData`, let the browser set the request's `Content-Type` and boundary. Images must be JPEG, PNG, WebP, or GIF. The default limit is 20MB per file and 21MB for the entire request, including the pet JSON and multipart headers. Configure these using `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` and `SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE`; image validation uses the same configured file limit. Oversized uploads return HTTP 413 with an error describing the limits. Restart/redeploy after changing the settings.
