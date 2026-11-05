@@ -67,7 +67,7 @@ jwt:
 demo:
   account-email: ${DEMO_ACCOUNT_EMAIL:danico411@gmail.com}
   gps:
-    enabled: ${DEMO_GPS_ENABLED:true}
+    enabled: ${DEMO_GPS_ENABLED:false}
     outside-interval-ms: 300000
 
 geocoding:
