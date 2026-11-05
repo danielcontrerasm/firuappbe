@@ -2,6 +2,7 @@
 package com.example.pettracker.gps;
 
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder;
+import com.example.pettracker.gps.protocol.v41.Jt808Replies;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.DecodeResult;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.GpsPosition;
 import com.example.pettracker.service.AppTimeService;
@@ -12,6 +13,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.AttributeKey;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -29,6 +31,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static final int MAX_HEX_LOG_LENGTH = 512;
     private static final int V41_FRAME_FLAG = 0x7E;
     private static final int ASCII_FRAME_START = '[';
+    private static final AttributeKey<Integer> JT808_REPLY_SEQUENCE =
+            AttributeKey.valueOf(GpsMessageHandler.class, "jt808ReplySequence");
 
     private final GpsIngestionService gpsIngestionService;
     private final AppTimeService appTimeService;
@@ -69,6 +73,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         try {
             DecodeResult result = new V41ProtocolDecoder(appTimeService.zoneId()).decode(frame);
+            if (!sendJt808AckIfRequired(ctx, result)) return;
             // Expensive success-path log: every V41 frame is already validated and failures still warn below.
             // log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",
             //         remoteAddress,
@@ -89,6 +94,21 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             log.warn("Failed to process GPS V41 frame remote={} hex={}: {}",
                     remoteAddress, truncateHex(hexDumpFrame(frame)), ex.getMessage(), ex);
         }
+    }
+
+    private boolean sendJt808AckIfRequired(ChannelHandlerContext ctx, DecodeResult result) {
+        if (!Jt808Replies.requiresReply(result.getMessageId())) return true;
+
+        boolean knownTerminal = gpsIngestionService.isKnownTerminalId(result.getTerminalId());
+        Integer previous = ctx.channel().attr(JT808_REPLY_SEQUENCE).get();
+        int sequence = previous == null ? 0 : previous;
+        ctx.channel().attr(JT808_REPLY_SEQUENCE).set((sequence + 1) & 0xFFFF);
+        ctx.writeAndFlush(Unpooled.wrappedBuffer(Jt808Replies.response(result, sequence, knownTerminal)));
+        if (!knownTerminal) {
+            log.warn("JT808 message rejected for unregistered terminalId={} remote={}",
+                    result.getTerminalId(), ctx.channel().remoteAddress());
+        }
+        return knownTerminal;
     }
 
     private void handleAsciiBracketFrame(ChannelHandlerContext ctx, ByteBuf frame, String remoteAddress) {

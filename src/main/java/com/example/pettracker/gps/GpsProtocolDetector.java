@@ -8,7 +8,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import java.util.List;
 
-/** Selects a protocol once per connection without consuming the initial bytes. */
+/** Selects Topin or the shared V41/JT808/bracket ASCII decoder without consuming initial bytes. */
 public final class GpsProtocolDetector extends ByteToMessageDecoder {
     private final GpsMessageHandler legacyHandler;
     private final GpsIngestionService ingestion;

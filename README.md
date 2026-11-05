@@ -46,7 +46,9 @@ You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps
 ### Railway behavior in this repo
 
 - HTTP/Tomcat port is fixed at `8080`.
-- GPS TCP listener uses port `5000` and detects V41, bracket ASCII, and Topin (`7878`) per connection.
+- GPS TCP listener uses port `5000` and detects V41/JT/T 808 (`7E`), bracket ASCII, and Topin (`7878`) per connection.
+- JT/T 808 supports legacy (2011/2013) and 2019 headers, registration (`0100` → `8100`), and general replies (`8001`) for authentication (`0102`), heartbeats (`0002`), and single location reports (`0200`). Register the exact BCD terminal ID from the packet header as the pet terminal ID, including leading zeros (12 digits for legacy headers, 20 for 2019); it may differ from the printed IMEI. Unknown terminals receive a failure reply and their locations are not ingested. Admission uses the terminal ID; the registration token is not a secret credential. Set the device clock to the configured app time zone (`APP_TIME_ZONE`, default `America/Bogota`).
+- HW10 firmware compatibility still requires a manufacturer protocol document or captured packets. Vendor battery/Wi-Fi/LBS extensions, batch location uploads, encrypted messages, and subpackage reassembly are not covered by the standard single-location flow. Existing V41 battery fields remain supported.
 - For Topin devices, register the 15-digit IMEI as the pet terminal ID. Unknown devices are disconnected at login. Valid, recent, non-historical fixes use the shared persistence and geofence pipeline; status packets supply battery percentage for subsequent fixes on that connection. Topin replies use the `TRACCAR_COMPATIBLE` profile.
 - If Railway injects `DATABASE_URL`, `DATABASE_PRIVATE_URL`, or `DATABASE_PUBLIC_URL`, the app converts it to a JDBC URL automatically.
 - Railway deployments now fail fast if `JWT_SECRET` is missing or still using the development fallback.

@@ -58,14 +58,8 @@ public class V41FrameDecoder extends ByteToMessageDecoder {
             }
 
             if (startByte == V41_FRAME_FLAG && frameEnd == frameStart + 1) {
-                int nextV41End = indexOf(in, frameEnd + 1, in.writerIndex(), V41_FRAME_FLAG);
-                if (nextV41End < 0) {
-                    log.debug("GPS frame decoder skipping repeated V41 flag and waiting remote={} bufferedBytes={}",
-                        ctx.channel().remoteAddress(), in.readableBytes());
-                    in.skipBytes(1);
-                    return;
-                }
-                frameEnd = nextV41End;
+                in.skipBytes(1);
+                continue;
             }
 
             int frameLength = frameEnd - frameStart + 1;

@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Decoder for V41 devices based on the JT/T 808 protocol.
+ * Decoder for V41 and standard JT/T 808 devices (legacy and 2019 headers).
  *
  * Flow:
  *
@@ -70,6 +70,7 @@ public class V41ProtocolDecoder {
         // log.info("V41 decode started bytes={} rawHex={}", incomingBytes, truncateHex(rawHex));
 
         ByteBuf frame = incoming.copy();
+        ByteBuf data = null;
 
         try {
 
@@ -108,7 +109,7 @@ public class V41ProtocolDecoder {
             // log.debug("V41 checksum valid calculated/received={}",
             //         String.format("%02X", decodedPayload[decodedPayload.length - 1] & 0xFF));
 
-            ByteBuf data = Unpooled.wrappedBuffer(
+            data = Unpooled.wrappedBuffer(
                     decodedPayload,
                     0,
                     decodedPayload.length - 1
@@ -116,13 +117,11 @@ public class V41ProtocolDecoder {
 
             Jt808Header header = decodeHeader(data);
             // Expensive success-path log: repeated for every decoded packet.
-            // log.info("V41 header decoded messageId=0x{} messageType={} terminalId={} sequence={} bodyLength={} subPackage={} remainingBytes={}",
+            // log.info("V41 header decoded messageId=0x{} messageType={} terminalId={} sequence={} remainingBytes={}",
             //         String.format("%04X", header.messageId),
             //         messageType(header.messageId),
             //         header.terminalId,
             //         header.sequence,
-            //         header.bodyLength,
-            //         header.subPackage,
             //         data.readableBytes());
 
             DecodeResult result = new DecodeResult();
@@ -130,6 +129,7 @@ public class V41ProtocolDecoder {
             result.messageId = header.messageId;
             result.terminalId = header.terminalId;
             result.sequence = header.sequence;
+            result.protocolVersion = header.protocolVersion;
             result.rawHex = rawHex;
 
             switch (header.messageId) {
@@ -191,6 +191,7 @@ public class V41ProtocolDecoder {
             return result;
 
         } finally {
+            if (data != null) data.release();
             frame.release();
         }
     }
@@ -234,7 +235,11 @@ public class V41ProtocolDecoder {
 
                 int current = data[i] & 0xFF;
 
-                if (current == 0x7D && i + 1 < data.length) {
+                if (current == 0x7D) {
+
+                    if (i + 1 == data.length) {
+                        throw new V41ProtocolException("Incomplete JT808 escape sequence");
+                    }
 
                     int next = data[i + 1] & 0xFF;
 
@@ -249,6 +254,7 @@ public class V41ProtocolDecoder {
                         i++;
                         continue;
                     }
+                    throw new V41ProtocolException("Invalid JT808 escape sequence");
                 }
 
                 output.writeByte(current);
@@ -309,8 +315,19 @@ public class V41ProtocolDecoder {
 
         int bodyLength = messageProperties & 0x03FF;
         boolean subPackage = (messageProperties & 0x2000) != 0;
+        boolean versioned = (messageProperties & 0x4000) != 0;
 
-        byte[] terminalBytes = new byte[6];
+        if ((messageProperties & 0x1C00) != 0) {
+            throw new V41ProtocolException("Encrypted JT808 messages are not supported");
+        }
+        if (subPackage) {
+            throw new V41ProtocolException("JT808 subpackage reassembly is not supported");
+        }
+
+        ensureReadable(buffer, versioned ? 13 : 8);
+        Integer protocolVersion = versioned ? (int) buffer.readUnsignedByte() : null;
+
+        byte[] terminalBytes = new byte[versioned ? 10 : 6];
         buffer.readBytes(terminalBytes);
 
         String terminalId = decodeBcd(terminalBytes);
@@ -324,28 +341,14 @@ public class V41ProtocolDecoder {
         //         sequence,
         //         bodyLength);
 
-        Integer packageTotal = null;
-        Integer packageNumber = null;
-
-        if (subPackage) {
-            ensureReadable(buffer, 4);
-            packageTotal = buffer.readUnsignedShort();
-            packageNumber = buffer.readUnsignedShort();
-            log.debug("V41 subpackage header packageTotal={} packageNumber={}", packageTotal, packageNumber);
-        }
-
         Jt808Header header = new Jt808Header();
 
         header.messageId = messageId;
-        header.messageProperties = messageProperties;
-        header.bodyLength = bodyLength;
         header.terminalId = terminalId;
         header.sequence = sequence;
-        header.subPackage = subPackage;
-        header.packageTotal = packageTotal;
-        header.packageNumber = packageNumber;
+        header.protocolVersion = protocolVersion;
 
-        if (buffer.readableBytes() < bodyLength) {
+        if (buffer.readableBytes() != bodyLength) {
             log.warn("V41 body length mismatch messageId=0x{} terminalId={} expectedBodyLength={} available={}",
                     String.format("%04X", messageId),
                     terminalId,
@@ -354,7 +357,7 @@ public class V41ProtocolDecoder {
             throw new V41ProtocolException(
                     "JT808 body says "
                             + bodyLength
-                            + " bytes but only "
+                            + " bytes but "
                             + buffer.readableBytes()
                             + " are available"
             );
@@ -626,6 +629,9 @@ public class V41ProtocolDecoder {
 
         for (byte value : bytes) {
             int b = value & 0xFF;
+            if ((b >> 4) > 9 || (b & 0x0F) > 9) {
+                throw new V41ProtocolException("Invalid BCD terminal ID");
+            }
             builder.append((b >> 4) & 0x0F);
             builder.append(b & 0x0F);
         }
@@ -708,6 +714,7 @@ public class V41ProtocolDecoder {
         private String messageType;
         private String terminalId;
         private int sequence;
+        private Integer protocolVersion;
         private String rawHex;
         private GpsPosition position;
 
@@ -725,6 +732,11 @@ public class V41ProtocolDecoder {
 
         public int getSequence() {
             return sequence;
+        }
+
+        /** Null for the legacy header, otherwise the version byte from the 2019 header. */
+        public Integer getProtocolVersion() {
+            return protocolVersion;
         }
 
         public String getRawHex() {
@@ -750,13 +762,9 @@ public class V41ProtocolDecoder {
     private static class Jt808Header {
 
         private int messageId;
-        private int messageProperties;
-        private int bodyLength;
         private String terminalId;
         private int sequence;
-        private boolean subPackage;
-        private Integer packageTotal;
-        private Integer packageNumber;
+        private Integer protocolVersion;
     }
 
     public static class GpsPosition {
