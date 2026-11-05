@@ -3,9 +3,12 @@ package com.example.pettracker.service;
 import com.example.pettracker.entity.Geofence;
 import com.example.pettracker.entity.Location;
 import com.example.pettracker.entity.Pet;
+import com.example.pettracker.entity.User;
+import com.example.pettracker.entity.Alert;
 import com.example.pettracker.repository.GeofenceRepository;
 import com.example.pettracker.repository.PetRepository;
-import java.time.LocalDateTime;
+import com.example.pettracker.repository.LocationRepository;
+import com.example.pettracker.repository.UserRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -14,10 +17,10 @@ import org.locationtech.jts.geom.Envelope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-// Disabled: this simulator creates mock GPS positions for Bella, Peluche, and Rocky.
-// @Service
-// @ConditionalOnProperty(name = "demo.gps.enabled", havingValue = "true")
+@Service
+@ConditionalOnProperty(name = "demo.gps.enabled", havingValue = "true")
 public class DemoGpsSimulator {
 
     private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
@@ -27,22 +30,35 @@ public class DemoGpsSimulator {
 
     private final PetRepository petRepository;
     private final GeofenceRepository geofenceRepository;
-    private final GpsIngestionService gpsIngestionService;
-    private final Map<String, Integer> routeIndexByPetName = new ConcurrentHashMap<>();
+    private final UserRepository userRepository;
+    private final LocationRepository locationRepository;
+    private final AlertService alertService;
+    private final DemoAccount demoAccount;
+    private final AppTimeService appTimeService;
+    private final Map<Long, Integer> routeIndexByPetId = new ConcurrentHashMap<>();
 
     public DemoGpsSimulator(
             PetRepository petRepository,
             GeofenceRepository geofenceRepository,
-            GpsIngestionService gpsIngestionService) {
+            UserRepository userRepository,
+            LocationRepository locationRepository,
+            AlertService alertService,
+            DemoAccount demoAccount,
+            AppTimeService appTimeService) {
         this.petRepository = petRepository;
         this.geofenceRepository = geofenceRepository;
-        this.gpsIngestionService = gpsIngestionService;
+        this.userRepository = userRepository;
+        this.locationRepository = locationRepository;
+        this.alertService = alertService;
+        this.demoAccount = demoAccount;
+        this.appTimeService = appTimeService;
     }
 
     @Scheduled(
             fixedRateString = "${demo.gps.normal-interval-ms:300000}",
             initialDelayString = "${demo.gps.normal-initial-delay-ms:5000}"
     )
+    @Transactional
     public void publishNormalDemoLocations() {
         publishNextRouteLocation("Bella", bellaRoute());
         publishNextRouteLocation("Peluche", pelucheRoute());
@@ -53,15 +69,16 @@ public class DemoGpsSimulator {
             fixedRateString = "${demo.gps.outside-interval-ms:900000}",
             initialDelayString = "${demo.gps.outside-initial-delay-ms:30000}"
     )
+    @Transactional
     public void triggerOutsideGeofenceEvent() {
         publishOutsideGeofenceLocation("Bella", bellaRoute().getFirst());
     }
 
     private void publishNextRouteLocation(String petName, List<Point> route) {
         findPet(petName).ifPresent(pet -> {
-            int index = routeIndexByPetName.getOrDefault(petName, 0);
+            int index = routeIndexByPetId.getOrDefault(pet.getId(), 0);
             Point point = route.get(index % route.size());
-            routeIndexByPetName.put(petName, index + 1);
+            routeIndexByPetId.put(pet.getId(), (index + 1) % route.size());
             publishLocation(pet, point);
         });
     }
@@ -69,14 +86,19 @@ public class DemoGpsSimulator {
     private void publishOutsideGeofenceLocation(String petName, Point defaultCenter) {
         findPet(petName).ifPresent(pet -> {
             Geofence geofence = findOrCreateDemoCircleGeofence(pet, defaultCenter);
-            publishLocation(pet, outsidePointFor(geofence));
+            Point outside = outsidePointFor(geofence);
+            publishLocation(pet, outside);
+            // Demo alerts stay in this account; do not invoke real owner/volunteer notifications.
+            alertService.createAlert(pet, Alert.AlertType.BOUNDARY,
+                    "Demo geofence exit at " + outside.latitude() + "," + outside.longitude());
         });
     }
 
     private Optional<Pet> findPet(String petName) {
-        return petRepository.findAll().stream()
-                .filter(pet -> petName.equalsIgnoreCase(pet.getName()))
-                .findFirst();
+        return userRepository.findByEmail(demoAccount.email())
+                .filter(demoAccount::matches)
+                .flatMap(owner -> petRepository.findByImei(demoAccount.imeiFor(owner, petName))
+                        .filter(pet -> demoAccount.ownsDemoPet(owner, pet, petName)));
     }
 
     private Geofence findOrCreateDemoCircleGeofence(Pet pet, Point center) {
@@ -112,11 +134,11 @@ public class DemoGpsSimulator {
     }
 
     private void publishLocation(Pet pet, Point point) {
-        gpsIngestionService.processGpsUpdate(Location.builder()
+        locationRepository.save(Location.builder()
                 .pet(pet)
                 .latitude(point.latitude())
                 .longitude(point.longitude())
-                .timestamp(LocalDateTime.now())
+                .timestamp(appTimeService.now())
                 .build());
     }
 

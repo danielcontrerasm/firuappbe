@@ -65,8 +65,9 @@ jwt:
   expiration: ${JWT_EXPIRATION_MS:86400000}
 
 demo:
+  account-email: ${DEMO_ACCOUNT_EMAIL:danico411@gmail.com}
   gps:
-    enabled: false
+    enabled: ${DEMO_GPS_ENABLED:true}
     outside-interval-ms: 300000
 
 geocoding:

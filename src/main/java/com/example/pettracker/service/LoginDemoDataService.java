@@ -6,49 +6,50 @@ import com.example.pettracker.entity.User;
 import com.example.pettracker.repository.LocationRepository;
 import com.example.pettracker.repository.PetRepository;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LoginDemoDataService {
 
-    private static final String DEMO_EMAIL = "danico411@gmail.com";
-
     private final PetRepository petRepository;
     private final LocationRepository locationRepository;
+    private final DemoAccount demoAccount;
+    private final AppTimeService appTimeService;
 
-    public LoginDemoDataService(PetRepository petRepository, LocationRepository locationRepository) {
+    public LoginDemoDataService(PetRepository petRepository, LocationRepository locationRepository,
+                                DemoAccount demoAccount, AppTimeService appTimeService) {
         this.petRepository = petRepository;
         this.locationRepository = locationRepository;
+        this.demoAccount = demoAccount;
+        this.appTimeService = appTimeService;
     }
 
     @Transactional
     public void seedForLogin(User user) {
-        if (user == null || user.getEmail() == null || !DEMO_EMAIL.equalsIgnoreCase(user.getEmail())) {
+        if (!demoAccount.matches(user)) {
             return;
         }
 
-        Pet peluche = findOrCreatePet(user, "Peluche", "Dog", "Poodle", 4, 6.8, "DEMO-PELUCHE-" + user.getId());
-        Pet bella = findOrCreatePet(user, "Bella", "Dog", "Labrador", 3, 24.5, "DEMO-BELLA-" + user.getId());
-        Pet rocky = findOrCreatePet(user, "Rocky", "Dog", "Beagle", 5, 11.2, "DEMO-ROCKY-" + user.getId());
-
-        insertRoute(peluche, pobladoRoute(), 9);
-        insertRoute(bella, bellaRoute(), 18);
-        insertRoute(rocky, rockyRoute(), 18);
+        LocalDateTime now = appTimeService.now();
+        findOrCreatePet(user, "Peluche", "Dog", "Poodle", 4, 6.8)
+                .ifPresent(pet -> insertRoute(pet, pobladoRoute(), 9, now));
+        findOrCreatePet(user, "Bella", "Dog", "Labrador", 3, 24.5)
+                .ifPresent(pet -> insertRoute(pet, bellaRoute(), 18, now));
+        findOrCreatePet(user, "Rocky", "Dog", "Beagle", 5, 11.2)
+                .ifPresent(pet -> insertRoute(pet, rockyRoute(), 18, now));
     }
 
-    private Pet findOrCreatePet(User owner, String name, String type, String race, Integer age, Double weight, String imei) {
-        return petRepository.findByOwnerIdAndNameIgnoreCase(owner.getId(), name)
-                .map(existing -> {
-                    existing.setType(type);
-                    existing.setRace(race);
-                    existing.setAge(age);
-                    existing.setWeight(weight);
-                    existing.setImei(imei);
-                    return petRepository.save(existing);
-                })
-                .orElseGet(() -> petRepository.save(Pet.builder()
+    private Optional<Pet> findOrCreatePet(User owner, String name, String type, String race, Integer age, Double weight) {
+        String imei = demoAccount.imeiFor(owner, name);
+        Optional<Pet> existing = petRepository.findByImei(imei);
+        if (existing.isPresent()) {
+            return existing.filter(pet -> demoAccount.ownsDemoPet(owner, pet, name));
+        }
+        return Optional.of(petRepository.save(Pet.builder()
                         .name(name)
                         .type(type)
                         .race(race)
@@ -57,11 +58,17 @@ public class LoginDemoDataService {
                         .imei(imei)
                         .owner(owner)
                         .status(Pet.Status.ACTIVE)
+                        .createdAt(Instant.now())
                         .build()));
     }
 
-    private void insertRoute(Pet pet, List<Point> points, int minutesBetweenPoints) {
-        LocalDateTime start = LocalDateTime.now().minusMinutes((long) minutesBetweenPoints * (points.size() - 1));
+    private void insertRoute(Pet pet, List<Point> points, int minutesBetweenPoints, LocalDateTime now) {
+        boolean hasRecentRoute = locationRepository.findTopByPetIdOrderByTimestampDesc(pet.getId())
+                .map(Location::getTimestamp)
+                .filter(timestamp -> !timestamp.isBefore(now.minusHours(3)))
+                .isPresent();
+        if (hasRecentRoute) return;
+        LocalDateTime start = now.minusMinutes((long) minutesBetweenPoints * (points.size() - 1));
         for (int i = 0; i < points.size(); i++) {
             Point point = points.get(i);
             locationRepository.save(Location.builder()
