@@ -99,8 +99,8 @@ app:
 gps:
   jt808:
     terminal-time-zones:
-      # HW10 clock: use JT/T 808's GMT+8 convention; override if its firmware uses another zone.
-      "[014166272782]": ${GPS_HW10_TIME_ZONE:Asia/Shanghai}
+      # HW10 reports UTC; the application converts it to APP_TIME_ZONE for storage/display.
+      "[014166272782]": ${GPS_HW10_TIME_ZONE:UTC}
   listener:
     port: 5000
   ingestion:

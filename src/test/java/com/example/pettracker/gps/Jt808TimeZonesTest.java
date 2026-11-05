@@ -20,7 +20,7 @@ class Jt808TimeZonesTest {
         context().run(context -> {
             assertThat(context).hasNotFailed();
             Jt808TimeZones zones = context.getBean(Jt808TimeZones.class);
-            assertThat(zones.resolve("014166272782", BOGOTA)).isEqualTo(ZoneId.of("Asia/Shanghai"));
+            assertThat(zones.resolve("014166272782", BOGOTA)).isEqualTo(ZoneId.of("UTC"));
             assertThat(zones.resolve("14166272782", BOGOTA)).isEqualTo(BOGOTA);
             assertThat(zones.resolve("013345678906", BOGOTA)).isEqualTo(BOGOTA);
         });
@@ -42,7 +42,7 @@ class Jt808TimeZonesTest {
             assertThat(context).hasNotFailed();
             Jt808TimeZones zones = context.getBean(Jt808TimeZones.class);
             assertThat(zones.resolve("00000001234567890123", BOGOTA)).isEqualTo(ZoneId.of("UTC"));
-            assertThat(zones.resolve("014166272782", BOGOTA)).isEqualTo(ZoneId.of("Asia/Shanghai"));
+            assertThat(zones.resolve("014166272782", BOGOTA)).isEqualTo(ZoneId.of("UTC"));
         });
     }
 

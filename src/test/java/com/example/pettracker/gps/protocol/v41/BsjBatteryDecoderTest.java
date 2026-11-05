@@ -156,7 +156,7 @@ class BsjBatteryDecoderTest {
     void batteryFieldsAlsoDecodeWithTheVersion2019Header() {
         ByteBuf frame = Unpooled.wrappedBuffer(frame("eb0b0004002d0f17000300a83c", true));
         try {
-            var position = new V41ProtocolDecoder(ZoneId.of("Asia/Shanghai")).decode(frame).getPosition();
+            var position = new V41ProtocolDecoder(ZoneId.of("UTC")).decode(frame).getPosition();
             assertThat(position.getBattery()).isEqualTo(60);
             assertThat(position.getBatteryVoltage()).isEqualTo(3.863);
         } finally {
@@ -176,7 +176,7 @@ class BsjBatteryDecoderTest {
                 Runnable::run, appTime, Caffeine.newBuilder().build(), Duration.ofDays(1), Duration.ofMinutes(1),
                 false, 100, 1);
         Jt808TimeZones zones = new Jt808TimeZones();
-        zones.setTerminalTimeZones(Map.of("014166272782", "Asia/Shanghai"));
+        zones.setTerminalTimeZones(Map.of("014166272782", "UTC"));
         EmbeddedChannel channel = new EmbeddedChannel(new GpsProtocolDetector(
                 new GpsMessageHandler(ingestion, appTime, zones), ingestion));
         try {
@@ -186,7 +186,7 @@ class BsjBatteryDecoderTest {
             Location saved = captured.getValue();
             assertThat(saved.getBatteryPercent()).isEqualTo(60);
             assertThat(saved.getBatteryVoltage()).isEqualTo(3.857);
-            assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 11, 30));
+            assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 19, 30));
             LocationDTO dto = LocationMapper.INSTANCE.toDto(saved);
             var json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(dto));
             assertThat(json.get("batteryPercent").intValue()).isEqualTo(60);
@@ -206,7 +206,7 @@ class BsjBatteryDecoderTest {
     private V41ProtocolDecoder.GpsPosition decode(String additionalFields) {
         ByteBuf frame = Unpooled.wrappedBuffer(frame(additionalFields));
         try {
-            return new V41ProtocolDecoder(ZoneId.of("Asia/Shanghai")).decode(frame).getPosition();
+            return new V41ProtocolDecoder(ZoneId.of("UTC")).decode(frame).getPosition();
         } finally {
             frame.release();
         }

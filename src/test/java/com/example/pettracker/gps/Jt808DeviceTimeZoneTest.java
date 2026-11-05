@@ -30,10 +30,10 @@ class Jt808DeviceTimeZoneTest {
             "7e0200001f0133456789060012000000000000000a0047e24d046a4204000000000000261105003000e10157ef7e";
 
     @Test
-    void hw10Gmt8TimestampIsSavedAsBogotaTimeIncludingTheDateChange() {
+    void hw10UtcTimestampIsSavedAsBogotaTimeIncludingTheDateChange() {
         Location saved = ingest("014166272782", HW10_PACKET);
 
-        assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 11, 30));
+        assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 19, 30));
     }
 
     @Test
@@ -44,14 +44,14 @@ class Jt808DeviceTimeZoneTest {
     }
 
     @Test
-    void hw10CanUseUtcIfItsFirmwareReportsUtc() {
-        Location saved = ingest("014166272782", HW10_PACKET, "UTC");
+    void hw10CanUseShanghaiIfItsFirmwareReportsGmt8() {
+        Location saved = ingest("014166272782", HW10_PACKET, "Asia/Shanghai");
 
-        assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 19, 30));
+        assertThat(saved.getTimestamp()).isEqualTo(LocalDateTime.of(2026, 11, 4, 11, 30));
     }
 
     private Location ingest(String terminal, String packet) {
-        return ingest(terminal, packet, "Asia/Shanghai");
+        return ingest(terminal, packet, "UTC");
     }
 
     private Location ingest(String terminal, String packet, String hw10Zone) {
