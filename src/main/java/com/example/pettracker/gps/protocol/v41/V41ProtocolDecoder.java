@@ -9,8 +9,12 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * Decoder for V41 and standard JT/T 808 devices (legacy and 2019 headers).
@@ -32,14 +36,19 @@ public class V41ProtocolDecoder {
 
     private static final int FRAME_FLAG = 0x7E;
     private static final int MAX_HEX_LOG_LENGTH = 512;
-    private final ZoneId timestampZone;
+    private final Function<String, ZoneId> timestampZoneResolver;
 
     public V41ProtocolDecoder() {
         this(ZoneId.of("America/Bogota"));
     }
 
     public V41ProtocolDecoder(ZoneId timestampZone) {
-        this.timestampZone = timestampZone;
+        this(terminalId -> timestampZone);
+        Objects.requireNonNull(timestampZone);
+    }
+
+    public V41ProtocolDecoder(Function<String, ZoneId> timestampZoneResolver) {
+        this.timestampZoneResolver = Objects.requireNonNull(timestampZoneResolver);
     }
 
     private static final int MSG_HEARTBEAT = 0x0002;
@@ -415,7 +424,7 @@ public class V41ProtocolDecoder {
         byte[] datetime = new byte[6];
         buffer.readBytes(datetime);
 
-        position.timestamp = decodeDateTime(datetime);
+        position.timestamp = decodeDateTime(datetime, header.terminalId);
         // Expensive debug log: hex-dumps BCD timestamp for every location packet.
         // log.debug("V41 location datetime rawBcd={} timestamp={}",
         //         ByteBufUtil.hexDump(datetime), position.timestamp);
@@ -426,6 +435,10 @@ public class V41ProtocolDecoder {
                 position.gpsValid, position.accOn, position.alarm);
 
         decodeAdditionalFields(buffer, position);
+        if (position.battery != null || position.batteryVoltage != null) {
+            log.info("JT808 battery terminalId={} batteryPercent={} batteryVoltage={} reportedImei={}",
+                    position.terminalId, position.battery, position.batteryVoltage, position.imei);
+        }
 
         return position;
     }
@@ -472,6 +485,9 @@ public class V41ProtocolDecoder {
                 case 0xE7 ->
                         decodeV41Status(value, position);
 
+                case 0xEB ->
+                        decodeBsjAdditionalFields(value, position);
+
                 case 0xEE ->
                         decodeV41Lbs(value, position);
 
@@ -500,6 +516,70 @@ public class V41ProtocolDecoder {
         long raw = value.readUnsignedInt();
         position.mileageKm = raw / 10.0;
         log.debug("V41 mileage decoded raw={} mileageKm={}", raw, position.mileageKm);
+    }
+
+    private void decodeBsjAdditionalFields(ByteBuf buffer, GpsPosition position) {
+        position.additionalFields.put("0xEB", ByteBufUtil.hexDump(buffer));
+        while (buffer.isReadable()) {
+            if (buffer.readableBytes() < 2) {
+                position.additionalFields.put("malformed_EB", "Incomplete record length");
+                return;
+            }
+
+            // The WORD length includes the WORD type and value, but not the length itself.
+            int length = buffer.readUnsignedShort();
+            if (length < 2 || length > buffer.readableBytes()) {
+                position.additionalFields.put("malformed_EB",
+                        "recordLength=" + length + ",available=" + buffer.readableBytes());
+                return;
+            }
+            ByteBuf value = buffer.readSlice(length);
+            int id = value.readUnsignedShort();
+            String key = String.format("bsj_0x%04X", id);
+            position.additionalFields.put(key, ByteBufUtil.hexDump(value));
+
+            switch (id) {
+                case 0x00A8 -> {
+                    if (value.readableBytes() == 1) {
+                        setBatteryPercent(position, value.readUnsignedByte());
+                    } else {
+                        position.additionalFields.put("unsupported_" + key, "length=" + value.readableBytes());
+                    }
+                }
+                case 0x002D -> {
+                    // Only the two-byte battery variant is supported; four bytes mean external power.
+                    if (value.readableBytes() == 2) {
+                        int millivolts = value.readUnsignedShort();
+                        position.additionalFields.put("batteryVoltageMillivoltsRaw", String.valueOf(millivolts));
+                        if (millivolts > 0 && millivolts != 0xFFFF) {
+                            position.batteryVoltage = millivolts / 1000.0;
+                        }
+                    } else {
+                        position.additionalFields.put("unsupported_" + key, "length=" + value.readableBytes());
+                    }
+                }
+                case 0x00D5 -> decodeBsjImei(value, position);
+                default -> { /* Unknown entries remain available in additionalFields. */ }
+            }
+        }
+    }
+
+    private void decodeBsjImei(ByteBuf value, GpsPosition position) {
+        String imei = null;
+        int length = value.readableBytes();
+        if (length == 15) {
+            imei = value.toString(StandardCharsets.US_ASCII);
+        } else if (length == 16 && value.getUnsignedByte(value.writerIndex() - 1) == 0) {
+            imei = value.toString(value.readerIndex(), 15, StandardCharsets.US_ASCII);
+        } else if (length == 8) {
+            String bcd = ByteBufUtil.hexDump(value);
+            if (bcd.endsWith("f")) imei = bcd.substring(0, 15);
+            else if (bcd.startsWith("0")) imei = bcd.substring(1);
+        }
+        if (imei != null && imei.matches("[0-9]{15}") && !imei.equals("000000000000000")) {
+            position.imei = imei;
+            position.additionalFields.put("imei", imei);
+        }
     }
 
     private void decodeFuel(ByteBuf value, GpsPosition position) {
@@ -642,7 +722,7 @@ public class V41ProtocolDecoder {
         return builder.toString();
     }
 
-    private Instant decodeDateTime(byte[] data) {
+    private Instant decodeDateTime(byte[] data, String terminalId) {
 
         if (data.length != 6) {
             return null;
@@ -656,9 +736,14 @@ public class V41ProtocolDecoder {
         int second = bcd(data[5]);
 
         try {
-            return LocalDateTime.of(year, month, day, hour, minute, second)
-                    .atZone(timestampZone)
-                    .toInstant();
+            LocalDateTime deviceTime = LocalDateTime.of(year, month, day, hour, minute, second);
+            ZonedDateTime zonedTime = deviceTime.atZone(timestampZoneResolver.apply(terminalId));
+            Instant decodedTime = zonedTime.toInstant();
+            // The six-byte timestamp carries no offset; label the applied zone as configured.
+            log.info("JT808 time terminalId={} rawBcd={} deviceTime={} configuredZone={} appliedOffset={} decodedUtc={} serverUtc={}",
+                    terminalId, ByteBufUtil.hexDump(data), deviceTime, zonedTime.getZone(),
+                    zonedTime.getOffset(), decodedTime, Instant.now());
+            return decodedTime;
         } catch (DateTimeException ex) {
             log.warn("V41 invalid BCD datetime raw={} decoded={}-{}-{} {}:{}:{}",
                     ByteBufUtil.hexDump(data),
@@ -773,6 +858,7 @@ public class V41ProtocolDecoder {
     public static class GpsPosition {
 
         private String terminalId;
+        private String imei;
         private String protocol;
         private Double latitude;
         private Double longitude;
@@ -795,6 +881,10 @@ public class V41ProtocolDecoder {
 
         public String getTerminalId() {
             return terminalId;
+        }
+
+        public String getImei() {
+            return imei;
         }
 
         public String getProtocol() {
@@ -877,6 +967,7 @@ public class V41ProtocolDecoder {
         public String toString() {
             return "GpsPosition{"
                     + "terminalId='" + terminalId + '\''
+                    + ", imei='" + imei + '\''
                     + ", protocol='" + protocol + '\''
                     + ", latitude=" + latitude
                     + ", longitude=" + longitude

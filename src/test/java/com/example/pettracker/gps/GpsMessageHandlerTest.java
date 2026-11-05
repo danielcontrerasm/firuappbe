@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GpsMessageHandlerTest {
 
-    private final GpsMessageHandler handler = new GpsMessageHandler(null, null);
+    private final GpsMessageHandler handler = new GpsMessageHandler(null, null, null);
 
     @Test
     void extractsBatteryPercentFromUdLteLocationPayload() {

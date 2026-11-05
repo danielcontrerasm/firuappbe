@@ -97,6 +97,10 @@ app:
       ttl: ${PET_ACCESS_CACHE_TTL:PT10M}
 
 gps:
+  jt808:
+    terminal-time-zones:
+      # HW10 clock: use JT/T 808's GMT+8 convention; override if its firmware uses another zone.
+      "[014166272782]": ${GPS_HW10_TIME_ZONE:Asia/Shanghai}
   listener:
     port: 5000
   ingestion:

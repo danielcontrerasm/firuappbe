@@ -120,7 +120,7 @@ class Jt808ConnectionTest {
     void replySequencesAreIndependentForConnectionsUsingTheSameHandler() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
         when(ingestion.isKnownTerminalId(TERMINAL_2019)).thenReturn(true);
-        GpsMessageHandler handler = new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota"));
+        GpsMessageHandler handler = new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota"), new Jt808TimeZones());
         EmbeddedChannel first = new EmbeddedChannel(new GpsProtocolDetector(handler, ingestion));
         EmbeddedChannel second = new EmbeddedChannel(new GpsProtocolDetector(handler, ingestion));
         try {
@@ -175,7 +175,7 @@ class Jt808ConnectionTest {
 
     private static EmbeddedChannel channel(GpsIngestionService ingestion) {
         return new EmbeddedChannel(new GpsProtocolDetector(
-                new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota")), ingestion));
+                new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota"), new Jt808TimeZones()), ingestion));
     }
 
     private static void write(EmbeddedChannel channel, String hex) {

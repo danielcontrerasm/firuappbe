@@ -36,6 +36,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private final GpsIngestionService gpsIngestionService;
     private final AppTimeService appTimeService;
+    private final Jt808TimeZones jt808TimeZones;
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
@@ -72,7 +73,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
 
         try {
-            DecodeResult result = new V41ProtocolDecoder(appTimeService.zoneId()).decode(frame);
+            DecodeResult result = new V41ProtocolDecoder(
+                    terminalId -> jt808TimeZones.resolve(terminalId, appTimeService.zoneId())).decode(frame);
             if (!sendJt808AckIfRequired(ctx, result)) return;
             // Expensive success-path log: every V41 frame is already validated and failures still warn below.
             // log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",

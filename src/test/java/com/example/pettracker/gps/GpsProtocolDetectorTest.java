@@ -15,7 +15,7 @@ class GpsProtocolDetectorTest {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
         when(ingestion.isKnownTerminalId("123456789012345")).thenReturn(true);
         EmbeddedChannel channel = new EmbeddedChannel(new GpsProtocolDetector(
-                new GpsMessageHandler(ingestion, null), ingestion));
+                new GpsMessageHandler(ingestion, null, new Jt808TimeZones()), ingestion));
         try {
             channel.writeInbound(Unpooled.wrappedBuffer(new byte[]{0x78}));
             channel.writeInbound(Unpooled.wrappedBuffer(HexFormat.of().parseHex(
@@ -35,7 +35,7 @@ class GpsProtocolDetectorTest {
     void asciiTrafficStillReachesExistingHandler() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
         EmbeddedChannel channel = new EmbeddedChannel(new GpsProtocolDetector(
-                new GpsMessageHandler(ingestion, null), ingestion));
+                new GpsMessageHandler(ingestion, null, new Jt808TimeZones()), ingestion));
         try {
             channel.writeInbound(Unpooled.copiedBuffer("[SG*123*0002*LK]", java.nio.charset.StandardCharsets.US_ASCII));
             ByteBuf reply = channel.readOutbound();
