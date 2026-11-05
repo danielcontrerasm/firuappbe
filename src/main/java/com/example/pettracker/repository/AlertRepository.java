@@ -12,4 +12,8 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     List<Alert> findByPetId(Long petId);
 
     List<Alert> findByPetIdOrderByCreatedAtDesc(Long petId);
+
+    List<Alert> findByPetOwnerIdAndStatusOrderByCreatedAtDesc(Long ownerId, Alert.Status status);
+
+    List<Alert> findByStatusOrderByCreatedAtDesc(Alert.Status status);
 }

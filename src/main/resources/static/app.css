@@ -355,6 +355,45 @@ textarea {
     gap: 0.5rem;
 }
 
+.alerts-panel {
+    margin: 1rem 0;
+}
+
+.alerts-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.alert-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.8rem;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff7ed;
+}
+
+.alert-item-main {
+    min-width: 0;
+}
+
+.alert-item header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.alert-item p {
+    margin: 0.45rem 0 0.2rem;
+}
+
+.alert-item small {
+    color: var(--muted);
+}
+
 .empty-state {
     padding: 1rem;
     background: var(--surface-alt);

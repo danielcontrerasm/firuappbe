@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.time.format.DateTimeFormatter;
 import org.locationtech.jts.geom.Envelope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @ConditionalOnProperty(name = "demo.gps.enabled", havingValue = "true")
 public class DemoGpsSimulator {
+
+    private static final DateTimeFormatter ALERT_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
     private static final double DEFAULT_DEMO_RADIUS_METERS = 500.0;
@@ -90,7 +94,8 @@ public class DemoGpsSimulator {
             publishLocation(pet, outside);
             // Demo alerts stay in this account; do not invoke real owner/volunteer notifications.
             alertService.createAlert(pet, Alert.AlertType.BOUNDARY,
-                    "Demo geofence exit at " + outside.latitude() + "," + outside.longitude());
+                    "Demo geofence exit at " + outside.latitude() + "," + outside.longitude()
+                            + " on " + ALERT_TIME_FORMATTER.format(appTimeService.now()));
         });
     }
 

@@ -12,6 +12,8 @@ import com.example.pettracker.repository.GeofenceRepository;
 import com.example.pettracker.repository.LocationRepository;
 import com.example.pettracker.repository.PetRepository;
 import java.util.List;
+import java.util.Locale;
+import java.time.format.DateTimeFormatter;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -27,6 +29,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @Slf4j
 public class GeofencingService {
+
+    private static final DateTimeFormatter ALERT_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final GeofenceRepository geofenceRepository;
     private final PetRepository petRepository;
@@ -208,7 +213,12 @@ public class GeofencingService {
             Pet pet = petRepository.findById(location.getPet().getId()).orElse(null);
             if (pet == null) return;
 
-            String metadata = String.format("Out of geofence at %f,%f", location.getLatitude(), location.getLongitude());
+            String eventTime = location.getTimestamp() == null
+                    ? "unknown"
+                    : ALERT_TIME_FORMATTER.format(location.getTimestamp());
+            String metadata = String.format(Locale.ROOT,
+                    "Out of geofence at %f,%f on %s",
+                    location.getLatitude(), location.getLongitude(), eventTime);
             alertService.createAlert(pet, com.example.pettracker.entity.Alert.AlertType.BOUNDARY, metadata);
             notificationService.notifyOwner(pet.getOwner(),
                     "Alert: Your pet " + pet.getName() + " left its geofence. " + metadata);

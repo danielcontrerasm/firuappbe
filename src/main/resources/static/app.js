@@ -4,6 +4,7 @@ const state = {
     walkers: [],
     pets: [],
     petWalkDistancesByPetId: {},
+    alerts: [],
     requests: [],
     dogWalks: [],
     adminMetrics: null,
@@ -20,6 +21,8 @@ const el = {
     walkersWall: document.getElementById("walkersWall"),
     toast: document.getElementById("toast"),
     dashboardBand: document.getElementById("dashboardBand"),
+    alertsPanel: document.getElementById("alertsPanel"),
+    alertsList: document.getElementById("alertsList"),
     ownerPanel: document.getElementById("ownerPanel"),
     walkerPanel: document.getElementById("walkerPanel"),
     adminPanel: document.getElementById("adminPanel"),
@@ -51,15 +54,18 @@ document.getElementById("adminCreateWalkerForm").addEventListener("submit", crea
 document.getElementById("logoutBtn").addEventListener("click", logout);
 document.getElementById("refreshWalkersBtn").addEventListener("click", loadPublicWalkers);
 document.getElementById("refreshDashboardBtn").addEventListener("click", refreshDashboard);
+document.getElementById("refreshAlertsBtn").addEventListener("click", refreshAlerts);
 document.getElementById("refreshMapBtn").addEventListener("click", refreshSelectedWalkMap);
 document.getElementById("sendMyPositionBtn").addEventListener("click", sendCurrentPosition);
 document.getElementById("completeWalkBtn").addEventListener("click", completeSelectedWalk);
+document.getElementById("alertsList").addEventListener("click", dismissAlert);
 
 bootstrap();
 setInterval(() => {
     if (state.token) {
         refreshSelectedRequestMessages();
         refreshSelectedWalkMap();
+        refreshAlerts();
     }
 }, 15000);
 
@@ -108,6 +114,7 @@ function logout() {
     state.me = null;
     state.pets = [];
     state.petWalkDistancesByPetId = {};
+    state.alerts = [];
     state.requests = [];
     state.dogWalks = [];
     state.selectedRequest = null;
@@ -172,7 +179,8 @@ async function refreshDashboard() {
     const loads = [
         loadPublicWalkers(),
         loadRequests(),
-        loadDogWalks()
+        loadDogWalks(),
+        loadAlerts()
     ];
 
     if (state.me && state.me.role !== "WALKER") {
@@ -199,6 +207,39 @@ async function refreshDashboard() {
 async function loadPublicWalkers() {
     state.walkers = await api("/api/public/walkers");
     renderWalkers();
+}
+
+async function loadAlerts() {
+    state.alerts = await api("/api/alerts");
+    renderAlerts();
+}
+
+async function refreshAlerts() {
+    if (!state.token || !state.me) {
+        return;
+    }
+    try {
+        await loadAlerts();
+    } catch (error) {
+        console.warn(error);
+    }
+}
+
+async function dismissAlert(event) {
+    const button = event.target.closest("[data-dismiss-alert]");
+    if (!button) {
+        return;
+    }
+
+    button.disabled = true;
+    try {
+        await api(`/api/alerts/${button.dataset.dismissAlert}`, { method: "DELETE" });
+        state.alerts = state.alerts.filter((alert) => String(alert.id) !== button.dataset.dismissAlert);
+        renderAlerts();
+    } catch (error) {
+        button.disabled = false;
+        toast(error.message);
+    }
 }
 
 async function loadPets() {
@@ -363,7 +404,34 @@ function renderDashboard() {
         renderAdminMetrics();
         renderAdminWalkers();
     }
+    renderAlerts();
     renderWalkers();
+}
+
+function renderAlerts() {
+    if (!el.alertsPanel || !el.alertsList) {
+        return;
+    }
+    if (!state.me || !state.alerts.length) {
+        el.alertsPanel.hidden = true;
+        el.alertsList.innerHTML = "";
+        return;
+    }
+
+    el.alertsPanel.hidden = false;
+    el.alertsList.innerHTML = state.alerts.map((alert) => `
+        <article class="alert-item">
+            <div class="alert-item-main">
+                <header>
+                    <strong>${escapeHtml(alert.petName || "Mascota")}</strong>
+                    <span class="tag warn">${escapeHtml(alert.alertType || "ALERTA")}</span>
+                </header>
+                <p>${escapeHtml(alert.metadata || "Alerta de geocerca")}</p>
+                <small>${escapeHtml(formatDateTime(alert.createdAt))}</small>
+            </div>
+            <button type="button" class="icon-button" data-dismiss-alert="${alert.id}">Ocultar</button>
+        </article>
+    `).join("");
 }
 
 function renderPets() {
