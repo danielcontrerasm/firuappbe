@@ -66,8 +66,7 @@ public class V41ProtocolDecoder {
                 incoming.readerIndex(),
                 incomingBytes
         );
-        // Expensive success-path log: raw frame hex can be large and is emitted for every GPS packet.
-        // log.info("V41 decode started bytes={} rawHex={}", incomingBytes, truncateHex(rawHex));
+        log.info("V41 GPS raw packet: {}", rawHex);
 
         ByteBuf frame = incoming.copy();
         ByteBuf data = null;
