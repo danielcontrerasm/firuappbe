@@ -546,7 +546,11 @@ public class V41ProtocolDecoder {
 
     private void decodeBatteryPercent(ByteBuf value, GpsPosition position) {
 
-        if (!value.isReadable()) {
+        // This is the V41 percentage extension, not a generic JT808 voltage/status field.
+        // Other layouts must not turn their first byte into a plausible percentage.
+        if (value.readableBytes() != 1) {
+            position.additionalFields.put("malformed_E1", "length=" + value.readableBytes());
+            position.additionalFields.put("0xE1", ByteBufUtil.hexDump(value));
             return;
         }
 

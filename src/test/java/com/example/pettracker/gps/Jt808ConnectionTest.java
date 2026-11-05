@@ -8,6 +8,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
@@ -71,6 +72,30 @@ class Jt808ConnectionTest {
             assertReply(channel, "7e800140050100000001234567890123000100220200004f7e");
             assertLocation(ingestion, TERMINAL_2019);
             assertThat((Object) channel.readOutbound()).isNull();
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource(nullValues = "unknown", value = {
+            "013345678906, 7e0200001f0133456789060012000000000000000a0047e24d046a4204000000000000261105123456e10100f87e, 0",
+            "013345678906, 7e0200001f0133456789060012000000000000000a0047e24d046a4204000000000000261105123456e101ff077e, unknown",
+            "013345678906, 7e020000200133456789060012000000000000000a0047e24d046a4204000000000000261105123456e1020057937e, unknown",
+            "00000001234567890123, 7e0200401f01000000012345678901230012000000000000000a0047e24d046a4204000000000000261105123456e101008d7e, 0",
+            "00000001234567890123, 7e0200401f01000000012345678901230012000000000000000a0047e24d046a4204000000000000261105123456e101ff727e, unknown",
+            "00000001234567890123, 7e0200402001000000012345678901230012000000000000000a0047e24d046a4204000000000000261105123456e1020057e67e, unknown"
+    })
+    void validatedBatteryIsForwardedWithoutDroppingTheLocation(String terminal, String packet, Integer battery) {
+        GpsIngestionService ingestion = mock(GpsIngestionService.class);
+        when(ingestion.isKnownTerminalId(terminal)).thenReturn(true);
+        EmbeddedChannel channel = channel(ingestion);
+        try {
+            write(channel, packet);
+            assertLocation(ingestion, terminal, battery);
+            assertReply(channel, terminal.equals(TERMINAL)
+                    ? "7e80010005013345678906000000120200000b7e"
+                    : "7e800140050100000001234567890123000000120200007d027e");
         } finally {
             channel.finishAndReleaseAll();
         }
@@ -168,7 +193,11 @@ class Jt808ConnectionTest {
     }
 
     private static void assertLocation(GpsIngestionService ingestion, String terminal) {
+        assertLocation(ingestion, terminal, 87);
+    }
+
+    private static void assertLocation(GpsIngestionService ingestion, String terminal, Integer battery) {
         verify(ingestion).processDecodedLocation(eq("V41"), eq(terminal), eq(4.710989), eq(-74.072580),
-                eq(Instant.parse("2026-11-05T17:34:56Z")), eq(true), eq(87), isNull(), anyString(), anyString());
+                eq(Instant.parse("2026-11-05T17:34:56Z")), eq(true), eq(battery), isNull(), anyString(), anyString());
     }
 }
