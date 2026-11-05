@@ -291,7 +291,11 @@ public class WalkerMarketplaceService {
     public List<WalkRequestResponse> listMyWalkRequests(Authentication authentication, int page, int size) {
         User current = currentUserService.require(authentication);
         List<WalkRequest> requests;
-        if (current.getRole() == User.Role.WALKER) {
+        if (current.getRole() == User.Role.ADMIN) {
+            requests = walkRequestRepository.findAllByOrderByCreatedAtDesc(
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
+        } else if (current.getRole() == User.Role.WALKER) {
             requests = walkRequestRepository.findByWalkerProfileUserIdOrderByCreatedAtDesc(
                     current.getId(),
                     pageRequest(page, size, MAX_PAGE_SIZE)
@@ -475,7 +479,11 @@ public class WalkerMarketplaceService {
     public List<DogWalkResponse> listMyDogWalks(Authentication authentication, int page, int size) {
         User current = currentUserService.require(authentication);
         List<DogWalk> dogWalks;
-        if (current.getRole() == User.Role.WALKER) {
+        if (current.getRole() == User.Role.ADMIN) {
+            dogWalks = dogWalkRepository.findAllByOrderByStartedAtDesc(
+                    pageRequest(page, size, MAX_PAGE_SIZE)
+            );
+        } else if (current.getRole() == User.Role.WALKER) {
             dogWalks = dogWalkRepository.findByWalkerProfileUserIdOrderByStartedAtDesc(
                     current.getId(),
                     pageRequest(page, size, MAX_PAGE_SIZE)

@@ -47,6 +47,32 @@ public class SearchGroupMapper {
         );
     }
 
+    /** Public lost-wall representation without account or volunteer user details. */
+    public static SearchGroupDto toPublicDto(SearchGroup searchGroup) {
+        Pet pet = searchGroup.getPet();
+        Set<User> volunteers = searchGroup.getVolunteers();
+        return new SearchGroupDto(
+                searchGroup.getId(),
+                searchGroup.getGroupName(),
+                searchGroup.getDescription(),
+                searchGroup.getStatus(),
+                searchGroup.getArea(),
+                searchGroup.getCity(),
+                volunteers == null ? 0 : volunteers.size(),
+                searchGroup.getLeaderName(),
+                searchGroup.getLeaderPhone(),
+                searchGroup.getCoverageRadiusKm(),
+                searchGroup.getCreatedAt(),
+                pet == null ? null : pet.getId(),
+                pet == null ? null : pet.getName(),
+                pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
+                null,
+                null,
+                null,
+                List.of()
+        );
+    }
+
     public static VolunteerDto toDto(Volunteer volunteer) {
         User user = volunteer.getUser();
         SearchGroup searchGroup = volunteer.getSearchGroup();

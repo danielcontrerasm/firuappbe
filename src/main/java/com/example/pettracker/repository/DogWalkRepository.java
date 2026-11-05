@@ -27,6 +27,9 @@ public interface DogWalkRepository extends JpaRepository<DogWalk, Long> {
     @EntityGraph(attributePaths = {"walkRequest", "owner", "walkerProfile", "walkerProfile.user", "pet"})
     List<DogWalk> findByWalkerProfileUserIdOrderByStartedAtDesc(Long userId, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"walkRequest", "owner", "walkerProfile", "walkerProfile.user", "pet"})
+    List<DogWalk> findAllByOrderByStartedAtDesc(Pageable pageable);
+
     @Override
     @EntityGraph(attributePaths = {"walkRequest", "owner", "walkerProfile", "walkerProfile.user", "pet"})
     Optional<DogWalk> findById(Long id);

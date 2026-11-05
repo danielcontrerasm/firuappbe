@@ -6,6 +6,7 @@ import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.dto.VolunteerDto;
 import com.example.pettracker.entity.Pet;
+import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.mapper.SearchGroupMapper;
 import com.example.pettracker.repository.SearchGroupRepository;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/search-groups")
@@ -93,8 +95,7 @@ public class SearchGroupController {
                 && (pet.getOwner() == null || !pet.getOwner().getId().equals(user.getId()))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(SearchGroupMapper.toDto(volunteerService.createSearchGroupForLostPet(
+        SearchGroup saved = volunteerService.createSearchGroupForLostPet(
                         pet,
                         user,
                         groupName,
@@ -105,7 +106,11 @@ public class SearchGroupController {
                         leaderName,
                         leaderPhone,
                         coverageRadiusKm,
-                        volunteerUserIds)));
+                        user.getRole() == User.Role.ADMIN ? volunteerUserIds : List.of());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(user.getRole() == User.Role.ADMIN
+                        ? SearchGroupMapper.toDto(saved)
+                        : SearchGroupMapper.toPublicDto(saved));
     }
 
     @PutMapping(path = "/{searchGroupId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -113,16 +118,29 @@ public class SearchGroupController {
             @PathVariable Long searchGroupId,
             @RequestBody SearchGroupUpdateRequest request,
             Authentication authentication) {
-        return SearchGroupMapper.toDto(
-                volunteerService.updateSearchGroup(searchGroupId, currentUser(authentication), request));
+        User user = currentUser(authentication);
+        SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request);
+        return user.getRole() == User.Role.ADMIN
+                ? SearchGroupMapper.toDto(updated)
+                : SearchGroupMapper.toPublicDto(updated);
     }
 
     @GetMapping
     public List<SearchGroupDto> listAll(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
-        return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
-                .map(SearchGroupMapper::toDto)
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user.getRole() == User.Role.ADMIN) {
+            return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
+                    .map(SearchGroupMapper::toDto)
+                    .toList();
+        }
+        // Non-admin users see their own groups plus the lost-pet wall,
+        // without account/member details.
+        return searchGroupRepository.findVisibleToUser(
+                        user.getId(), Pet.Status.LOST, pageRequest(page, size)).stream()
+                .map(SearchGroupMapper::toPublicDto)
                 .toList();
     }
 
@@ -130,9 +148,20 @@ public class SearchGroupController {
     public List<SearchGroupDto> listForPet(
             @PathVariable Long petId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        Pet pet = petService.findById(petId);
+        if (pet == null) {
+            return List.of();
+        }
+        boolean owner = pet.getOwner() != null && user.getId().equals(pet.getOwner().getId());
+        if (user.getRole() != User.Role.ADMIN && !owner && pet.getStatus() != Pet.Status.LOST) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this pet's groups");
+        }
+        boolean fullDetails = user.getRole() == User.Role.ADMIN;
         return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
-                .map(SearchGroupMapper::toDto)
+                .map(fullDetails ? SearchGroupMapper::toDto : SearchGroupMapper::toPublicDto)
                 .toList();
     }
 
@@ -169,6 +198,9 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
+        if (currentUser(authentication).getRole() != User.Role.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only administrators can search users");
+        }
         return volunteerService.searchVolunteerCandidates(
                 searchGroupId,
                 q,
@@ -187,7 +219,18 @@ public class SearchGroupController {
     public List<VolunteerDto> volunteers(
             @PathVariable Long searchGroupId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size) {
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
+        if (group == null) {
+            return List.of();
+        }
+        boolean owner = group.getPet() != null && group.getPet().getOwner() != null
+                && user.getId().equals(group.getPet().getOwner().getId());
+        if (user.getRole() != User.Role.ADMIN && !owner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group owner or an admin can view members");
+        }
         return volunteerService.getActiveVolunteersForGroup(searchGroupId, pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toDto)
                 .toList();
@@ -200,7 +243,9 @@ public class SearchGroupController {
             Authentication authentication) {
         User user = currentUser(authentication);
         return volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)).stream()
-                .map(SearchGroupMapper::toDto)
+                .map(user.getRole() == User.Role.ADMIN
+                        ? SearchGroupMapper::toDto
+                        : SearchGroupMapper::toPublicDto)
                 .toList();
     }
 

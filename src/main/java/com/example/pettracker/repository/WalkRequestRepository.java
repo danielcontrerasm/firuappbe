@@ -20,6 +20,9 @@ public interface WalkRequestRepository extends JpaRepository<WalkRequest, Long> 
     @EntityGraph(attributePaths = {"owner", "walkerProfile", "walkerProfile.user", "pet"})
     List<WalkRequest> findByWalkerProfileUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"owner", "walkerProfile", "walkerProfile.user", "pet"})
+    List<WalkRequest> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
     @Override
     @EntityGraph(attributePaths = {"owner", "walkerProfile", "walkerProfile.user", "pet"})
     java.util.Optional<WalkRequest> findById(Long id);
