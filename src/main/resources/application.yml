@@ -66,6 +66,8 @@ jwt:
 
 demo:
   account-email: ${DEMO_ACCOUNT_EMAIL:danico411@gmail.com}
+  walkers:
+    enabled: ${DEMO_WALKERS_ENABLED:true}
   gps:
     enabled: ${DEMO_GPS_ENABLED:false}
     outside-interval-ms: 300000

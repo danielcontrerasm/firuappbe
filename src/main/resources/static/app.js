@@ -15,7 +15,7 @@ const state = {
     mapMarkers: []
 };
 
-const savedTheme = localStorage.getItem("pettrackerTheme") || "default";
+const savedTheme = localStorage.getItem("pettrackerTheme") || "firuapp";
 document.body.dataset.theme = savedTheme;
 
 const el = {
@@ -26,6 +26,10 @@ const el = {
     dashboardBand: document.getElementById("dashboardBand"),
     alertsPanel: document.getElementById("alertsPanel"),
     alertsList: document.getElementById("alertsList"),
+    dashboardGreeting: document.getElementById("dashboardGreeting"),
+    dashboardSubtitle: document.getElementById("dashboardSubtitle"),
+    dashboardRole: document.getElementById("dashboardRole"),
+    dashboardStats: document.getElementById("dashboardStats"),
     ownerPanel: document.getElementById("ownerPanel"),
     walkerPanel: document.getElementById("walkerPanel"),
     adminPanel: document.getElementById("adminPanel"),
@@ -78,10 +82,14 @@ document.getElementById("refreshMapBtn").addEventListener("click", refreshSelect
 document.getElementById("sendMyPositionBtn").addEventListener("click", sendCurrentPosition);
 document.getElementById("completeWalkBtn").addEventListener("click", completeSelectedWalk);
 document.getElementById("alertsList").addEventListener("click", dismissAlert);
+document.querySelectorAll("[data-demo-email]").forEach((button) => {
+    button.addEventListener("click", () => fillDemoLogin(button.dataset.demoEmail));
+});
 
 bootstrap();
 setInterval(() => {
     if (state.token) {
+        refreshInbox();
         refreshSelectedRequestMessages();
         refreshSelectedWalkMap();
         refreshAlerts();
@@ -172,6 +180,15 @@ async function login(event) {
     await loadSession();
 }
 
+function fillDemoLogin(email) {
+    const loginForm = document.getElementById("loginForm");
+    loginForm.elements.email.value = email;
+    loginForm.elements.password.value = "FiruDemo123!";
+    loginForm.elements.email.focus();
+    loginForm.scrollIntoView({ behavior: "smooth", block: "center" });
+    toast("Credenciales demo cargadas. Pulsa Entrar.");
+}
+
 async function applyWalker(event) {
     event.preventDefault();
     const payload = normalizeNumbers(formToObject(event.currentTarget), ["experienceYears", "basePrice"]);
@@ -239,6 +256,18 @@ async function refreshAlerts() {
     }
     try {
         await loadAlerts();
+    } catch (error) {
+        console.warn(error);
+    }
+}
+
+async function refreshInbox() {
+    if (!state.token || !state.me) {
+        return;
+    }
+    try {
+        await Promise.all([loadRequests(), loadDogWalks()]);
+        renderDashboard();
     } catch (error) {
         console.warn(error);
     }
@@ -400,12 +429,20 @@ function renderDashboard() {
     const loggedIn = Boolean(state.me);
     el.dashboardBand.hidden = !loggedIn;
     if (!loggedIn) {
+        el.dashboardStats.innerHTML = "";
         renderWalkers();
         return;
     }
 
     const isWalker = state.me.role === "WALKER";
     const isAdmin = state.me.role === "ADMIN";
+    const roleLabel = isWalker ? "Paseador" : isAdmin ? "Administrador" : "Dueño";
+    el.dashboardGreeting.textContent = `Hola, ${state.me.name}`;
+    el.dashboardSubtitle.textContent = isWalker
+        ? "Revisa solicitudes nuevas, responde a cada familia y comienza el paseo cuando esté confirmado."
+        : "Revisa el estado de tus mascotas y encuentra un paseador disponible para tu próximo paseo.";
+    el.dashboardRole.textContent = roleLabel;
+    renderDashboardStats(isWalker, isAdmin);
     el.ownerPanel.hidden = isWalker;
     el.walkerPanel.hidden = !isWalker;
     el.adminPanel.hidden = !isAdmin;
@@ -425,6 +462,36 @@ function renderDashboard() {
     }
     renderAlerts();
     renderWalkers();
+}
+
+function renderDashboardStats(isWalker, isAdmin) {
+    const pendingRequests = state.requests.filter((request) => request.status === "PENDING").length;
+    const activeRequests = state.requests.filter((request) => ["ACCEPTED", "IN_PROGRESS"].includes(request.status)).length;
+    const activeWalks = state.dogWalks.filter((walk) => walk.status === "IN_PROGRESS").length;
+    const stats = isWalker
+        ? [
+            ["Solicitudes nuevas", pendingRequests, "Por revisar"],
+            ["En negociación", state.requests.filter((request) => request.status === "NEGOTIATING").length, "Conversaciones abiertas"],
+            ["Paseos activos", activeWalks, "Seguimiento en mapa"]
+        ]
+        : isAdmin
+            ? [
+                ["Paseadores visibles", state.walkers.length, "Perfiles disponibles"],
+                ["Solicitudes", state.requests.length, "Todas las cuentas"],
+                ["Paseos activos", activeWalks, "En seguimiento"]
+            ]
+            : [
+                ["Mis mascotas", state.pets.length, "Registradas en FiruApp"],
+                ["Solicitudes", state.requests.length, `${activeRequests} activas`],
+                ["Paseos activos", activeWalks, "Seguimiento en mapa"]
+            ];
+
+    el.dashboardStats.innerHTML = stats.map(([label, value, detail], index) => `
+        <article class="dashboard-stat dashboard-stat-${index + 1}">
+            <span class="stat-icon" aria-hidden="true">${["✦", "⌁", "◉"][index]}</span>
+            <div><strong>${formatNumber(value)}</strong><span>${label}</span><small>${detail}</small></div>
+        </article>
+    `).join("");
 }
 
 function renderAlerts() {
@@ -537,13 +604,13 @@ function renderRequestList(container, requests, emptyText) {
         return;
     }
     container.innerHTML = requests.map((request) => `
-        <article class="list-item">
+        <article class="list-item request-card ${request.status === "PENDING" ? "request-card-new" : ""}">
             <header>
                 <div>
                     <strong>${escapeHtml(request.petName || "Paseo sin mascota asignada")}</strong>
                     <div class="muted">${escapeHtml(state.me.role === "WALKER" ? request.ownerName : request.walkerName)}</div>
                 </div>
-                <span class="tag ${request.status === "ACCEPTED" || request.status === "IN_PROGRESS" || request.status === "COMPLETED" ? "ok" : "warn"}">${request.status}</span>
+                <span class="tag ${request.status === "ACCEPTED" || request.status === "IN_PROGRESS" || request.status === "COMPLETED" ? "ok" : "warn"}">${formatRequestStatus(request.status)}</span>
             </header>
             <div class="meta-line">
                 <span>${formatDateTime(request.requestedStart)}</span>
@@ -551,7 +618,8 @@ function renderRequestList(container, requests, emptyText) {
                 <span>Dueño $${formatMoney(request.ownerBudget)}</span>
                 <span>Paseador $${formatMoney(request.walkerQuotedPrice)}</span>
             </div>
-            <button data-request-id="${request.id}" class="icon-button">Abrir detalle</button>
+            ${request.notes ? `<p class="request-note">“${escapeHtml(request.notes)}”</p>` : ""}
+            <button data-request-id="${request.id}" class="icon-button">${state.me.role === "WALKER" ? "Revisar solicitud" : "Abrir detalle"}</button>
         </article>
     `).join("");
 
@@ -733,7 +801,7 @@ function renderRequestDetail(messages = []) {
         <strong>Dirección:</strong> ${escapeHtml(request.serviceAddress || "Por definir")}<br>
         <strong>Presupuesto dueño:</strong> $${formatMoney(request.ownerBudget)}<br>
         <strong>Tarifa paseador:</strong> $${formatMoney(request.walkerQuotedPrice)}<br>
-        <strong>Estado:</strong> ${request.status}
+        <strong>Estado:</strong> ${formatRequestStatus(request.status)}
     `;
 
     el.requestActions.innerHTML = "";
@@ -748,13 +816,15 @@ function renderRequestActions(request) {
         const wrapper = document.createElement("form");
         wrapper.className = "inline-grid";
         wrapper.innerHTML = `
-            <input name="walkerQuotedPrice" type="number" min="0" step="0.01" placeholder="Tarifa propuesta">
+            <label class="field-label">Tu propuesta de tarifa
+                <input name="walkerQuotedPrice" type="number" min="0" step="0.01" value="${request.walkerQuotedPrice ?? ""}" placeholder="Tarifa propuesta">
+            </label>
             <select name="status">
-                <option value="NEGOTIATING">En negociación</option>
-                <option value="ACCEPTED">Aceptar condiciones</option>
-                <option value="REJECTED">Rechazar</option>
+                <option value="NEGOTIATING" ${request.status === "NEGOTIATING" ? "selected" : ""}>En negociación</option>
+                <option value="ACCEPTED" ${request.status === "ACCEPTED" ? "selected" : ""}>Aceptar condiciones</option>
+                <option value="REJECTED" ${request.status === "REJECTED" ? "selected" : ""}>Rechazar</option>
             </select>
-            <button type="submit">Guardar tarifa / estado</button>
+            <button type="submit">Guardar respuesta</button>
         `;
         wrapper.addEventListener("submit", async (event) => {
             event.preventDefault();
@@ -915,11 +985,12 @@ function renderDogWalkMap(positions) {
     }
 
     const latLngs = positions.map((position) => [position.latitude, position.longitude]);
-    state.mapLine = L.polyline(latLngs, { color: "#166534", weight: 4 }).addTo(state.map);
+    const routeColor = document.body.dataset.theme === "firuapp" ? "#1260d8" : "#166534";
+    state.mapLine = L.polyline(latLngs, { color: routeColor, weight: 4 }).addTo(state.map);
     latLngs.forEach((latLng, index) => {
         const marker = L.circleMarker(latLng, {
             radius: index === latLngs.length - 1 ? 7 : 5,
-            color: index === latLngs.length - 1 ? "#b91c1c" : "#166534",
+            color: index === latLngs.length - 1 ? "#b91c1c" : routeColor,
             fillOpacity: 0.9
         }).addTo(state.map);
         state.mapMarkers.push(marker);
@@ -978,6 +1049,19 @@ function normalizeNumbers(payload, numberFields) {
         payload[field] = Number(payload[field]);
     });
     return payload;
+}
+
+function formatRequestStatus(status) {
+    const labels = {
+        PENDING: "Nueva",
+        NEGOTIATING: "En negociación",
+        ACCEPTED: "Aceptada",
+        REJECTED: "Rechazada",
+        IN_PROGRESS: "En curso",
+        COMPLETED: "Completada",
+        CANCELLED: "Cancelada"
+    };
+    return labels[status] || status || "Sin estado";
 }
 
 function formatMoney(value) {
