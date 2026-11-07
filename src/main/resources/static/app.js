@@ -15,6 +15,9 @@ const state = {
     mapMarkers: []
 };
 
+const savedTheme = localStorage.getItem("pettrackerTheme") || "default";
+document.body.dataset.theme = savedTheme;
+
 const el = {
     sessionStatus: document.getElementById("sessionStatus"),
     logoutBtn: document.getElementById("logoutBtn"),
@@ -44,6 +47,22 @@ const el = {
     adminMetrics: document.getElementById("adminMetrics"),
     adminWalkers: document.getElementById("adminWalkers")
 };
+
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+themeToggleBtn.addEventListener("click", () => {
+    const nextTheme = document.body.dataset.theme === "firuapp" ? "default" : "firuapp";
+    document.body.dataset.theme = nextTheme;
+    localStorage.setItem("pettrackerTheme", nextTheme);
+    themeToggleBtn.setAttribute("aria-pressed", String(nextTheme === "firuapp"));
+    themeToggleBtn.innerHTML = nextTheme === "firuapp"
+        ? "<span aria-hidden=\"true\">◑</span> Vista clásica"
+        : "<span aria-hidden=\"true\">◐</span> Vista FiruApp";
+});
+
+themeToggleBtn.setAttribute("aria-pressed", String(savedTheme === "firuapp"));
+themeToggleBtn.innerHTML = savedTheme === "firuapp"
+    ? "<span aria-hidden=\"true\">◑</span> Vista clásica"
+    : "<span aria-hidden=\"true\">◐</span> Vista FiruApp";
 
 document.getElementById("ownerRegisterForm").addEventListener("submit", registerOwner);
 document.getElementById("loginForm").addEventListener("submit", login);

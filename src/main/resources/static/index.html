@@ -13,12 +13,21 @@
 <div class="app-shell">
     <header class="topbar">
         <div>
+            <div class="brand-lockup">
+                <span class="brand-mark" aria-hidden="true">🐾</span>
+                <span>FiruApp</span>
+            </div>
             <p class="eyebrow">Marketplace de paseadores</p>
             <h1>Encuentra un paseador, acuerda tarifa y sigue el paseo en mapa</h1>
         </div>
         <div class="session-box">
             <div id="sessionStatus" class="session-status">No has iniciado sesión.</div>
-            <button id="logoutBtn" class="ghost-button" hidden>Cerrar sesión</button>
+            <div class="session-actions">
+                <button id="themeToggleBtn" class="theme-toggle ghost-button" type="button" aria-pressed="false">
+                    <span aria-hidden="true">◐</span> Vista FiruApp
+                </button>
+                <button id="logoutBtn" class="ghost-button" hidden>Cerrar sesión</button>
+            </div>
         </div>
     </header>
 

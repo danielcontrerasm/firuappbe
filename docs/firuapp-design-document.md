@@ -43,16 +43,16 @@ This document defines the current system design, functional and non-functional r
 - GPS TCP: Netty.
 - Async jobs: Spring `ThreadPoolTaskExecutor`.
 - Notifications: SMTP email and Twilio SMS/WhatsApp.
-- Maps/frontend: Static HTML/CSS/JavaScript with Leaflet.
+- Maps/frontend: Static HTML/CSS/JavaScript with Leaflet in the backend service, plus a companion React frontend whose `/walks` route consumes the walker marketplace API.
 - Deployment: Docker/Railway.
 
 ## 4. Users and Roles
 
 | Role | Description | Main Capabilities |
 | --- | --- | --- |
-| USER | Pet owner | Manage pets, create walk requests, track pets, configure geofences, manage lost-pet groups |
+| USER | Pet owner | Manage own pets, locations, routes, geofences, walk requests and dog walks; manage own lost-pet groups and view the lost-pet wall |
 | WALKER | Dog walker | Receive walk requests, quote, chat, start walks, send positions, complete walks |
-| ADMIN | Platform admin | Manage walkers, view metrics, access owner-level resources as needed |
+| ADMIN | Platform admin | Manage walkers, view metrics, access all owner, walker, search-group, and transit resources |
 
 ## 5. Functional Requirements
 
@@ -63,6 +63,8 @@ This document defines the current system design, functional and non-functional r
 - Backend issues JWT tokens.
 - Email matching is case-insensitive.
 - Protected APIs require a valid bearer token.
+- `GET /api/me` returns the authenticated user's ID, name, email, phone, role, and optional walker profile ID.
+- `GET /api/walkers/me` returns the authenticated user's walker profile when one exists.
 
 ### Pet Management
 
@@ -102,6 +104,8 @@ This document defines the current system design, functional and non-functional r
 - Volunteers can join and leave search groups.
 - Search groups expose volunteer lists.
 - Volunteers can receive notifications for lost-pet/geofence events.
+- Normal users see search groups for their own pets plus groups published on the lost-pet wall; admins can see all groups.
+- Member-candidate user search is restricted to admins, while group owners/admins manage volunteer membership.
 
 ### Dog Walker Marketplace
 
@@ -115,6 +119,7 @@ This document defines the current system design, functional and non-functional r
 - Walkers can post live walk positions.
 - Owners and walkers can view active/historical walks.
 - Walkers can complete walks.
+- The React `/walks` page exposes the marketplace, request detail/chat, walker quote actions, active-walk map, GPS position upload, completion, and admin walker management.
 
 ### Admin Metrics
 
@@ -165,8 +170,11 @@ This document defines the current system design, functional and non-functional r
 
 - JWT is required for protected APIs.
 - Admin routes are protected by `ROLE_ADMIN`.
+- `/api/transit/**` is admin-only in addition to `/api/admin/**`.
+- Public access is limited to static assets, `/api/auth/**`, `/api/public/**`, `/api/walker-applications`, `/ws/**`, and `/error`; all other routes require authentication.
 - Geofence APIs must enforce owner/admin access.
 - Owner-scoped pet APIs must enforce owner/admin access.
+- Normal users must not read sensors, users, transit resources, or other users' private pets and groups; lost-pet-wall groups are the intentional public/redacted exception.
 - CORS allowed origins must be explicitly configured.
 - Passwords must be hashed using BCrypt.
 - JWT secret must not use the local development fallback in production.
@@ -516,11 +524,17 @@ sequenceDiagram
 - `POST /api/walk-requests`
 - `GET /api/walk-requests`
 - `GET /api/walk-requests/{id}`
+- `PUT /api/walk-requests/{id}/quote`
+- `PUT /api/walk-requests/{id}/decision`
 - `GET /api/walk-requests/{id}/messages`
 - `POST /api/walk-requests/{id}/messages`
 - `POST /api/walk-requests/{id}/start`
 - `GET /api/dog-walks`
+- `GET /api/dog-walks/{id}`
+- `GET /api/dog-walks/{id}/positions`
 - `POST /api/dog-walks/{id}/positions`
+- `POST /api/dog-walks/{id}/complete`
+- `GET /api/walkers/me`
 
 ### Admin
 
@@ -552,8 +566,9 @@ flowchart TD
 
 - `/api/auth/**`, `/api/public/**`, `/api/walker-applications`, static assets, and `/ws/**` are public.
 - `/api/admin/**` requires `ROLE_ADMIN`.
+- `/api/transit/**` requires `ROLE_ADMIN`.
 - All other API routes require authentication.
-- Owner-scoped resources must validate owner/admin access in service/controller logic.
+- Owner-scoped resources must validate owner/admin access in service/controller logic. Normal users are limited to their own pets, routes, geofences, walk requests/dog walks, and search groups (plus the lost-pet wall); admins can access the full scope.
 
 ## 16. Database Optimization Design
 

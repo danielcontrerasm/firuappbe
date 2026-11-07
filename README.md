@@ -57,10 +57,34 @@ You do not need to set `SPRING_DATASOURCE_URL` manually on Railway. The app maps
 - If Railway injects `DATABASE_URL`, `DATABASE_PRIVATE_URL`, or `DATABASE_PUBLIC_URL`, the app converts it to a JDBC URL automatically.
 - Railway deployments now fail fast if `JWT_SECRET` is missing or still using the development fallback.
 
+### Authentication and role access
+
+- Public routes are limited to the static dashboard assets, `/api/auth/**`, `/api/public/**`, `/api/walker-applications`, `/ws/**`, and `/error`.
+- `GET /api/me` is an authenticated endpoint that returns the current user's `id`, `name`, `email`, `phone`, `role`, and `walkerProfileId` (when the account has a walker profile).
+- `/api/admin/**` and `/api/transit/**` require `ROLE_ADMIN`.
+- Every other API route requires a valid JWT bearer token. Owner-scoped services restrict normal users to their own pets, locations, geofences, routes, walk requests, dog walks, and private search groups; lost-pet-wall groups are intentionally visible with redacted creator/member details. Admins can access the full owner/admin scope.
+- The companion React frontend exposes the dog-walk marketplace at `/walks` and sends the stored bearer token to these APIs.
+
 ### Local development
 
 Use `.env.example` as the variable template for local runs.
 
-Demo data is enabled by default for the existing `danico411@gmail.com` account (`DEMO_ACCOUNT_EMAIL` overrides the account). After a successful login, it seeds Bella, Peluche, and Rocky with recent routes; repeated logins reuse those pets and skip routes that are still recent. The simulator adds locations every five minutes and demo geofence alerts on its configured interval. Only generated `DEMO-*` pets owned by the configured account and without a tracker terminal ID are eligible. Demo alerts are stored for that account without sending owner or volunteer notifications. Set `DEMO_GPS_ENABLED=false` to disable both seeding and simulation. Demo timestamps use `APP_TIME_ZONE`.
+Demo data is disabled by default. Set `DEMO_GPS_ENABLED=true` for the existing `danico411@gmail.com` account (`DEMO_ACCOUNT_EMAIL` overrides the account). After a successful login, it seeds Bella, Peluche, and Rocky with recent routes; repeated logins reuse those pets and skip routes that are still recent. The simulator adds locations every five minutes and demo geofence alerts on its configured interval. Only generated `DEMO-*` pets owned by the configured account and without a tracker terminal ID are eligible. Demo alerts are stored for that account without sending owner or volunteer notifications. Demo timestamps use `APP_TIME_ZONE`.
 
 Pet image uploads use `POST /api/pets` or `PUT /api/pets/{id}` with multipart parts named `pet` (`application/json`) and `image` (the file). For browser `FormData`, let the browser set the request's `Content-Type` and boundary. Images must be JPEG, PNG, WebP, or GIF. The default limit is 20MB per file and 21MB for the entire request, including the pet JSON and multipart headers. Configure these using `SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE` and `SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE`; image validation uses the same configured file limit. Oversized uploads return HTTP 413 with an error describing the limits. Restart/redeploy after changing the settings.
+
+### Dog-walk API
+
+The authenticated marketplace workflow is exposed through these endpoints:
+
+- `GET /api/public/walkers` and `POST /api/walker-applications` for the public walker wall and applications.
+- `GET /api/me` and `GET /api/walkers/me` for the signed-in account and its walker profile.
+- `POST /api/walk-requests`, `GET /api/walk-requests`, and `GET /api/walk-requests/{id}` for owner/walker requests.
+- `PUT /api/walk-requests/{id}/quote` for walker pricing/status proposals.
+- `PUT /api/walk-requests/{id}/decision` for owner accept/reject/cancel decisions.
+- `GET`/`POST /api/walk-requests/{id}/messages` for request chat.
+- `POST /api/walk-requests/{id}/start` to create or resume an active dog walk.
+- `GET /api/dog-walks`, `GET /api/dog-walks/{id}`, and `GET /api/dog-walks/{id}/positions` for active/history and route display.
+- `POST /api/dog-walks/{id}/positions` for walker GPS updates and `POST /api/dog-walks/{id}/complete` to finish a walk.
+
+The React `/walks` page consumes this API and includes owner requests, walker quoting/chat, live position submission, Leaflet route display, and admin walker management. Payments, ratings, availability time slots, and problem reports are not implemented yet.
