@@ -267,7 +267,12 @@ async function refreshInbox() {
     }
     try {
         await Promise.all([loadRequests(), loadDogWalks()]);
-        renderDashboard();
+        if (state.me.role === "WALKER" || state.me.role === "ADMIN") {
+            renderDashboard();
+        } else {
+            renderDashboardStats(false, false);
+            renderRequestList(el.ownerRequests, state.requests, "Selecciona una solicitud para conversar, aceptar o ver el paseo.");
+        }
     } catch (error) {
         console.warn(error);
     }
