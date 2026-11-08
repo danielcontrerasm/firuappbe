@@ -37,6 +37,8 @@ public class VolunteerService {
      * Registers a user as a volunteer for a specific search group
      */
     public Volunteer joinSearchGroup(Long userId, Long searchGroupId) {
+        log.info("Join search group request userId={} searchGroupId={}", userId, searchGroupId);
+
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
@@ -50,7 +52,8 @@ public class VolunteerService {
         }
 
         Volunteer savedVolunteer = addVolunteerMembership(searchGroup, user);
-        log.info("User {} joined search group {} as volunteer", userId, searchGroupId);
+        log.info("User {} joined search group {} as volunteer volunteerId={} reactivated={}",
+                userId, searchGroupId, savedVolunteer.getId(), existingVolunteer != null);
 
         // Send confirmation notification
         sendVolunteerJoinedNotification(user, searchGroup);
@@ -162,12 +165,18 @@ public class VolunteerService {
     }
 
     public Volunteer addVolunteer(Long searchGroupId, Long userId, User actingUser) {
+        log.info("Add group member request actingUserId={} targetUserId={} searchGroupId={}",
+                actingUser == null ? null : actingUser.getId(), userId, searchGroupId);
+
         SearchGroup searchGroup = requireSearchGroup(searchGroupId);
         requireGroupManager(actingUser, searchGroup);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
         Volunteer volunteer = addVolunteerMembership(searchGroup, user);
         notifyAddedVolunteer(user, searchGroup);
+        log.info("Group member added actingUserId={} targetUserId={} searchGroupId={} volunteerId={} active={}",
+                actingUser == null ? null : actingUser.getId(), userId, searchGroupId,
+                volunteer.getId(), volunteer.getActive());
         return volunteer;
     }
 
@@ -200,6 +209,7 @@ public class VolunteerService {
 
     private Volunteer addVolunteerMembership(SearchGroup searchGroup, User user) {
         Volunteer volunteer = volunteerRepository.findByUserIdAndSearchGroupId(user.getId(), searchGroup.getId());
+        boolean reactivated = volunteer != null;
         if (volunteer == null) {
             volunteer = Volunteer.builder()
                     .user(user)
@@ -214,6 +224,8 @@ public class VolunteerService {
         Volunteer savedVolunteer = volunteerRepository.save(volunteer);
         searchGroup.getVolunteers().add(user);
         searchGroupRepository.save(searchGroup);
+        log.debug("Saved volunteer membership userId={} searchGroupId={} volunteerId={} reactivated={}",
+                user.getId(), searchGroup.getId(), savedVolunteer.getId(), reactivated);
         return savedVolunteer;
     }
 
