@@ -21,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,6 +57,7 @@ public class SearchGroupController {
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Transactional
     public ResponseEntity<SearchGroupDto> create(@RequestBody SearchGroupCreateRequest request, Authentication authentication) {
         if (request.petId() == null) {
             throw new RuntimeException("petId is required");
@@ -114,6 +116,7 @@ public class SearchGroupController {
     }
 
     @PutMapping(path = "/{searchGroupId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Transactional
     public SearchGroupDto update(
             @PathVariable Long searchGroupId,
             @RequestBody SearchGroupUpdateRequest request,
@@ -126,6 +129,7 @@ public class SearchGroupController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public List<SearchGroupDto> listAll(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
@@ -145,6 +149,7 @@ public class SearchGroupController {
     }
 
     @GetMapping("/pet/{petId}")
+    @Transactional(readOnly = true)
     public List<SearchGroupDto> listForPet(
             @PathVariable Long petId,
             @RequestParam(defaultValue = "0") int page,
@@ -237,6 +242,7 @@ public class SearchGroupController {
     }
 
     @GetMapping("/my")
+    @Transactional(readOnly = true)
     public List<SearchGroupDto> myGroups(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
