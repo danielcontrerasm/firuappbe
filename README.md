@@ -346,12 +346,17 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `PUT` | `/api/search-groups/{id}` | Update a group |
 | `PUT` | `/api/search-groups/{id}` (`multipart/form-data`) | Update a group with an optional image |
 | `GET` | `/api/search-groups/{id}/image` | Read the group image |
+| `GET` | `/api/search-groups/{id}/messages` | List the group's internal chat messages |
+| `POST` | `/api/search-groups/{id}/messages` | Send an internal chat message |
 | `POST` | `/api/search-groups/{id}/join` | Join as a volunteer |
 | `POST` | `/api/search-groups/{id}/leave` | Leave a group |
 | `GET` | `/api/search-groups/{id}/volunteers` | List group volunteers |
 | `GET` | `/api/search-groups/{id}/member-candidates` | Find candidate members |
 | `POST` | `/api/search-groups/{id}/volunteers/{userId}` | Add a volunteer |
 | `DELETE` | `/api/search-groups/{id}/volunteers/{userId}` | Remove a volunteer |
+
+Group chat messages use JSON such as `{ "body": "I am searching the north side." }`.
+Only active volunteers, the pet/group owner, and administrators can read or send messages.
 
 ### Walker marketplace and dog walks
 
