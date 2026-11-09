@@ -341,6 +341,7 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `POST` | `/api/search-groups` | Create a group for a pet |
 | `POST` | `/api/search-groups` (`multipart/form-data`) | Create a group with an optional image (`group` JSON part + `image` file part) |
 | `GET` | `/api/search-groups` | List visible groups; supports pagination |
+| `GET` | `/api/search-groups/{id}` | Read one visible group |
 | `GET` | `/api/search-groups/my` | List groups for the current user |
 | `GET` | `/api/search-groups/pet/{petId}` | List groups for a pet |
 | `PUT` | `/api/search-groups/{id}` | Update a group |

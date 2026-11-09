@@ -178,6 +178,33 @@ public class SearchGroupController {
                 : SearchGroupMapper.toPublicDto(updated);
     }
 
+    @GetMapping("/{searchGroupId}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<SearchGroupDto> getById(
+            @PathVariable Long searchGroupId,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
+        if (group == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        boolean owner = group.getPet() != null
+                && group.getPet().getOwner() != null
+                && user.getId().equals(group.getPet().getOwner().getId());
+        if (user.getRole() != User.Role.ADMIN
+                && !owner
+                && (group.getPet() == null || group.getPet().getStatus() != Pet.Status.LOST)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Not allowed to access this search group");
+        }
+
+        SearchGroupDto result = user.getRole() == User.Role.ADMIN
+                ? SearchGroupMapper.toDto(group)
+                : SearchGroupMapper.toPublicDto(group);
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/{searchGroupId}/image")
     @Transactional(readOnly = true)
     public ResponseEntity<byte[]> getImage(
