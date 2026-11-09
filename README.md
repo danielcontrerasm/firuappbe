@@ -324,13 +324,28 @@ Pet image uploads use `multipart/form-data` with a `pet` JSON part and an option
 
 ### Lost-pet search groups
 
+To upload a group image, use `multipart/form-data` with a `group` part containing
+JSON and an optional `image` file part. The response includes `imageUrl`.
+The optional `whatsappGroupLink` field accepts HTTPS invitation links from
+`chat.whatsapp.com`, `www.whatsapp.com`, or `wa.me`.
+
+```bash
+curl -X POST http://localhost:8080/api/search-groups \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'group={"petId":42,"groupName":"Find Milo","description":"Search team","status":"active","whatsappGroupLink":"https://chat.whatsapp.com/example"};type=application/json' \
+  -F 'image=@milo.jpg;type=image/jpeg'
+```
+
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/search-groups` | Create a group for a pet |
+| `POST` | `/api/search-groups` (`multipart/form-data`) | Create a group with an optional image (`group` JSON part + `image` file part) |
 | `GET` | `/api/search-groups` | List visible groups; supports pagination |
 | `GET` | `/api/search-groups/my` | List groups for the current user |
 | `GET` | `/api/search-groups/pet/{petId}` | List groups for a pet |
 | `PUT` | `/api/search-groups/{id}` | Update a group |
+| `PUT` | `/api/search-groups/{id}` (`multipart/form-data`) | Update a group with an optional image |
+| `GET` | `/api/search-groups/{id}/image` | Read the group image |
 | `POST` | `/api/search-groups/{id}/join` | Join as a volunteer |
 | `POST` | `/api/search-groups/{id}/leave` | Leave a group |
 | `GET` | `/api/search-groups/{id}/volunteers` | List group volunteers |

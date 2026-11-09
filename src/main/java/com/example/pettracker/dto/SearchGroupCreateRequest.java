@@ -17,6 +17,7 @@ public record SearchGroupCreateRequest(
         Long createdById,
         String createdByName,
         String createdByEmail,
-        List<Long> volunteerUserIds
+        List<Long> volunteerUserIds,
+        String whatsappGroupLink
 ) {
 }

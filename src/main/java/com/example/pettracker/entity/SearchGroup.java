@@ -1,7 +1,11 @@
 package com.example.pettracker.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -11,6 +15,7 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class SearchGroup {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -40,6 +45,18 @@ public class SearchGroup {
     @ManyToOne
     @JoinColumn(name = "created_by")
     private User createdBy;
+
+    private String imageContentType;
+
+    private String imageFileName;
+
+    @JsonIgnore
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(columnDefinition = "bytea")
+    private byte[] imageData;
+
+    @Column(length = 1000)
+    private String whatsappGroupLink;
 
     @Builder.Default
     private Instant createdAt = Instant.now();

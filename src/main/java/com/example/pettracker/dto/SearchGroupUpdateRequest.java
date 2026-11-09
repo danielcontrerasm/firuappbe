@@ -8,6 +8,7 @@ public record SearchGroupUpdateRequest(
         String city,
         String leaderName,
         String leaderPhone,
-        Double coverageRadiusKm
+        Double coverageRadiusKm,
+        String whatsappGroupLink
 ) {
 }

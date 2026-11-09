@@ -13,6 +13,12 @@ ALTER TABLE IF EXISTS location
 ALTER TABLE IF EXISTS pet
     ADD COLUMN IF NOT EXISTS terminal_id varchar(255);
 
+ALTER TABLE IF EXISTS search_group
+    ADD COLUMN IF NOT EXISTS image_content_type varchar(255),
+    ADD COLUMN IF NOT EXISTS image_file_name varchar(255),
+    ADD COLUMN IF NOT EXISTS image_data bytea,
+    ADD COLUMN IF NOT EXISTS whatsapp_group_link varchar(1000);
+
 -- The database used by the marketplace originally allowed only USER and ADMIN.
 -- Keep this migration idempotent so approved demo walkers can be inserted on
 -- existing installations as well as on fresh deployments.

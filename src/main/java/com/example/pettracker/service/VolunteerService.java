@@ -15,9 +15,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,10 +33,18 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 public class VolunteerService {
 
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+    );
+
     private final VolunteerRepository volunteerRepository;
     private final SearchGroupRepository searchGroupRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final ImageUploadLimits imageUploadLimits;
 
     /**
      * Registers a user as a volunteer for a specific search group
@@ -102,6 +115,36 @@ public class VolunteerService {
             String leaderPhone,
             Double coverageRadiusKm,
             List<Long> volunteerUserIds) {
+        return createSearchGroupForLostPet(
+                lostPet,
+                petOwner,
+                groupName,
+                description,
+                status,
+                area,
+                city,
+                leaderName,
+                leaderPhone,
+                coverageRadiusKm,
+                volunteerUserIds,
+                null,
+                null);
+    }
+
+    public SearchGroup createSearchGroupForLostPet(
+            Pet lostPet,
+            User petOwner,
+            String groupName,
+            String description,
+            String status,
+            String area,
+            String city,
+            String leaderName,
+            String leaderPhone,
+            Double coverageRadiusKm,
+            List<Long> volunteerUserIds,
+            String whatsappGroupLink,
+            MultipartFile image) {
         validateCoverageRadius(coverageRadiusKm);
         SearchGroup searchGroup = SearchGroup.builder()
             .pet(lostPet)
@@ -114,8 +157,10 @@ public class VolunteerService {
             .leaderName(leaderName != null ? leaderName : petOwner.getName())
             .leaderPhone(leaderPhone != null ? leaderPhone : petOwner.getPhone())
             .coverageRadiusKm(coverageRadiusKm)
+            .whatsappGroupLink(normalizeWhatsappGroupLink(whatsappGroupLink))
             .createdAt(Instant.now())
             .build();
+        setImageIfPresent(searchGroup, image);
 
         SearchGroup savedGroup = searchGroupRepository.save(searchGroup);
         addVolunteerMembership(savedGroup, petOwner);
@@ -139,6 +184,14 @@ public class VolunteerService {
     }
 
     public SearchGroup updateSearchGroup(Long searchGroupId, User actingUser, SearchGroupUpdateRequest request) {
+        return updateSearchGroup(searchGroupId, actingUser, request, null);
+    }
+
+    public SearchGroup updateSearchGroup(
+            Long searchGroupId,
+            User actingUser,
+            SearchGroupUpdateRequest request,
+            MultipartFile image) {
         SearchGroup searchGroup = requireSearchGroup(searchGroupId);
         requireGroupManager(actingUser, searchGroup);
         validateCoverageRadius(request.coverageRadiusKm());
@@ -161,6 +214,10 @@ public class VolunteerService {
         if (request.leaderName() != null) searchGroup.setLeaderName(request.leaderName());
         if (request.leaderPhone() != null) searchGroup.setLeaderPhone(request.leaderPhone());
         if (request.coverageRadiusKm() != null) searchGroup.setCoverageRadiusKm(request.coverageRadiusKm());
+        if (request.whatsappGroupLink() != null) {
+            searchGroup.setWhatsappGroupLink(normalizeWhatsappGroupLink(request.whatsappGroupLink()));
+        }
+        setImageIfPresent(searchGroup, image);
         return searchGroupRepository.save(searchGroup);
     }
 
@@ -248,6 +305,76 @@ public class VolunteerService {
     private void validateCoverageRadius(Double coverageRadiusKm) {
         if (coverageRadiusKm != null && coverageRadiusKm < 0) {
             throw new RuntimeException("coverageRadiusKm cannot be negative");
+        }
+    }
+
+    private void setImageIfPresent(SearchGroup searchGroup, MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            return;
+        }
+        String contentType = image.getContentType();
+        if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
+            throw new IllegalArgumentException("Group image must be JPEG, PNG, WebP, or GIF");
+        }
+        imageUploadLimits.validateImageSize(image.getSize(), "Group image");
+        try {
+            searchGroup.setImageContentType(contentType);
+            searchGroup.setImageFileName(image.getOriginalFilename());
+            searchGroup.setImageData(image.getBytes());
+        } catch (IOException exception) {
+            throw new RuntimeException("Could not read group image", exception);
+        }
+    }
+
+    private String normalizeWhatsappGroupLink(String link) {
+        if (link == null || link.isBlank()) {
+            return null;
+        }
+        String normalized = link.trim();
+        try {
+            URI uri = URI.create(normalized);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (!"https".equalsIgnoreCase(uri.getScheme())
+                    || !("chat.whatsapp.com".equals(host)
+                    || "www.whatsapp.com".equals(host)
+                    || "wa.me".equals(host))) {
+                throw new IllegalArgumentException(
+                        "whatsappGroupLink must be an HTTPS WhatsApp invitation link");
+            }
+            return normalized;
+        } catch (IllegalArgumentException exception) {
+            if (exception.getMessage() != null
+                    && exception.getMessage().startsWith("whatsappGroupLink must")) {
+                throw exception;
+            }
+            throw new IllegalArgumentException("whatsappGroupLink must be a valid HTTPS WhatsApp invitation link");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public SearchGroupImage findImageById(Long searchGroupId) {
+        SearchGroup searchGroup = searchGroupRepository.findById(searchGroupId).orElse(null);
+        if (searchGroup == null || searchGroup.getImageData() == null
+                || searchGroup.getImageContentType() == null) {
+            return null;
+        }
+        Pet pet = searchGroup.getPet();
+        return new SearchGroupImage(
+                pet == null || pet.getOwner() == null ? null : pet.getOwner().getId(),
+                pet == null ? null : pet.getStatus(),
+                searchGroup.getImageData(),
+                searchGroup.getImageContentType(),
+                searchGroup.getImageFileName());
+    }
+
+    public record SearchGroupImage(
+            Long petOwnerId,
+            Pet.Status petStatus,
+            byte[] data,
+            String contentType,
+            String fileName) {
+        public String fileNameOrDefault() {
+            return fileName == null || fileName.isBlank() ? "search-group-image" : fileName;
         }
     }
 

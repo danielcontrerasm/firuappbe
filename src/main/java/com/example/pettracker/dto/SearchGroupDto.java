@@ -18,6 +18,8 @@ public record SearchGroupDto(
         Long petId,
         String petName,
         String petStatus,
+        String imageUrl,
+        String whatsappGroupLink,
         Long createdById,
         String createdByName,
         String createdByEmail,

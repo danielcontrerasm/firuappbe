@@ -18,9 +18,13 @@ public class ImageUploadLimits {
     }
 
     public void validateImageSize(long bytes) {
+        validateImageSize(bytes, "Pet image");
+    }
+
+    public void validateImageSize(long bytes, String imageLabel) {
         if (maxFileSize.toBytes() >= 0 && bytes > maxFileSize.toBytes()) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
-                    "Pet image must be " + describe(maxFileSize) + " or smaller");
+                    imageLabel + " must be " + describe(maxFileSize) + " or smaller");
         }
     }
 

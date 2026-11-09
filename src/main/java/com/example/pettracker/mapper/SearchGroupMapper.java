@@ -40,6 +40,8 @@ public class SearchGroupMapper {
                 pet == null ? null : pet.getId(),
                 pet == null ? null : pet.getName(),
                 pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
+                imageUrl(searchGroup),
+                searchGroup.getWhatsappGroupLink(),
                 createdBy == null ? null : createdBy.getId(),
                 createdBy == null ? null : createdBy.getName(),
                 createdBy == null ? null : createdBy.getEmail(),
@@ -66,6 +68,8 @@ public class SearchGroupMapper {
                 pet == null ? null : pet.getId(),
                 pet == null ? null : pet.getName(),
                 pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
+                imageUrl(searchGroup),
+                searchGroup.getWhatsappGroupLink(),
                 null,
                 null,
                 null,
@@ -91,6 +95,12 @@ public class SearchGroupMapper {
                 volunteer.getJoinedAt(),
                 volunteer.getActive()
         );
+    }
+
+    private static String imageUrl(SearchGroup searchGroup) {
+        return searchGroup.getImageContentType() == null || searchGroup.getId() == null
+                ? null
+                : "/api/search-groups/" + searchGroup.getId() + "/image";
     }
 
     private static VolunteerMemberDto toVolunteerMemberDto(User user) {

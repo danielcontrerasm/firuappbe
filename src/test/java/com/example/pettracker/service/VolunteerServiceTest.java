@@ -34,6 +34,7 @@ class VolunteerServiceTest {
     private SearchGroupRepository searchGroupRepository;
     private UserRepository userRepository;
     private NotificationService notificationService;
+    private ImageUploadLimits imageUploadLimits;
     private VolunteerService volunteerService;
 
     @BeforeEach
@@ -42,11 +43,13 @@ class VolunteerServiceTest {
         searchGroupRepository = mock(SearchGroupRepository.class);
         userRepository = mock(UserRepository.class);
         notificationService = mock(NotificationService.class);
+        imageUploadLimits = mock(ImageUploadLimits.class);
         volunteerService = new VolunteerService(
                 volunteerRepository,
                 searchGroupRepository,
                 userRepository,
-                notificationService);
+                notificationService,
+                imageUploadLimits);
 
         when(searchGroupRepository.save(any(SearchGroup.class))).thenAnswer(invocation -> {
             SearchGroup group = invocation.getArgument(0);
@@ -125,7 +128,7 @@ class VolunteerServiceTest {
                 50L,
                 owner,
                 new SearchGroupUpdateRequest(
-                        "New name", null, "paused", null, "Bogota", null, null, 2.5));
+                        "New name", null, "paused", null, "Bogota", null, null, 2.5, null));
 
         assertEquals("New name", updated.getGroupName());
         assertEquals("paused", updated.getStatus());

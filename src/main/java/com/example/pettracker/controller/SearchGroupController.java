@@ -14,6 +14,9 @@ import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
 import com.example.pettracker.service.VolunteerService;
 import java.util.List;
+import java.util.Objects;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -31,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -73,6 +78,33 @@ public class SearchGroupController {
                 request.leaderPhone(),
                 request.coverageRadiusKm(),
                 request.volunteerUserIds(),
+                request.whatsappGroupLink(),
+                null,
+                authentication);
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public ResponseEntity<SearchGroupDto> createWithImage(
+            @RequestPart("group") SearchGroupCreateRequest request,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            Authentication authentication) {
+        if (request.petId() == null) {
+            throw new RuntimeException("petId is required");
+        }
+        return createSearchGroup(
+                request.petId(),
+                request.groupName(),
+                request.description(),
+                request.status(),
+                request.area(),
+                request.city(),
+                request.leaderName(),
+                request.leaderPhone(),
+                request.coverageRadiusKm(),
+                request.volunteerUserIds(),
+                request.whatsappGroupLink(),
+                image,
                 authentication);
     }
 
@@ -87,6 +119,8 @@ public class SearchGroupController {
             String leaderPhone,
             Double coverageRadiusKm,
             List<Long> volunteerUserIds,
+            String whatsappGroupLink,
+            MultipartFile image,
             Authentication authentication) {
         User user = currentUser(authentication);
         Pet pet = petService.findById(petId);
@@ -108,7 +142,9 @@ public class SearchGroupController {
                         leaderName,
                         leaderPhone,
                         coverageRadiusKm,
-                        user.getRole() == User.Role.ADMIN ? volunteerUserIds : List.of());
+                        user.getRole() == User.Role.ADMIN ? volunteerUserIds : List.of(),
+                        whatsappGroupLink,
+                        image);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(user.getRole() == User.Role.ADMIN
                         ? SearchGroupMapper.toDto(saved)
@@ -126,6 +162,45 @@ public class SearchGroupController {
         return user.getRole() == User.Role.ADMIN
                 ? SearchGroupMapper.toDto(updated)
                 : SearchGroupMapper.toPublicDto(updated);
+    }
+
+    @PutMapping(path = "/{searchGroupId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Transactional
+    public SearchGroupDto updateWithImage(
+            @PathVariable Long searchGroupId,
+            @RequestPart("group") SearchGroupUpdateRequest request,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request, image);
+        return user.getRole() == User.Role.ADMIN
+                ? SearchGroupMapper.toDto(updated)
+                : SearchGroupMapper.toPublicDto(updated);
+    }
+
+    @GetMapping("/{searchGroupId}/image")
+    @Transactional(readOnly = true)
+    public ResponseEntity<byte[]> getImage(
+            @PathVariable Long searchGroupId,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        VolunteerService.SearchGroupImage image = volunteerService.findImageById(searchGroupId);
+        if (image == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group image not found");
+        }
+
+        boolean owner = Objects.equals(user.getId(), image.petOwnerId());
+        boolean publicLostGroup = image.petStatus() == Pet.Status.LOST;
+        if (user.getRole() != User.Role.ADMIN && !owner && !publicLostGroup) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this group image");
+        }
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.noCache())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"" + image.fileNameOrDefault() + "\"")
+                .body(image.data());
     }
 
     @GetMapping
