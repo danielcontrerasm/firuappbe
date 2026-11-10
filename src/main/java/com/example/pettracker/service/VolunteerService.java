@@ -50,6 +50,14 @@ public class VolunteerService {
      * Registers a user as a volunteer for a specific search group
      */
     public Volunteer joinSearchGroup(Long userId, Long searchGroupId) {
+        return joinSearchGroupWithResult(userId, searchGroupId).volunteer();
+    }
+
+    /**
+     * Registers a user as a volunteer and reports whether the membership was
+     * created, reactivated, or already active.
+     */
+    public JoinSearchGroupResult joinSearchGroupWithResult(Long userId, Long searchGroupId) {
         log.info("Join search group request userId={} searchGroupId={}", userId, searchGroupId);
 
         User user = userRepository.findById(userId)
@@ -61,17 +69,24 @@ public class VolunteerService {
         Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
         if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getActive())) {
             log.warn("User {} is already an active volunteer in search group {}", userId, searchGroupId);
-            return existingVolunteer;
+            return new JoinSearchGroupResult(existingVolunteer, true, false);
         }
 
         Volunteer savedVolunteer = addVolunteerMembership(searchGroup, user);
+        boolean reactivated = existingVolunteer != null;
         log.info("User {} joined search group {} as volunteer volunteerId={} reactivated={}",
-                userId, searchGroupId, savedVolunteer.getId(), existingVolunteer != null);
+                userId, searchGroupId, savedVolunteer.getId(), reactivated);
 
         // Send confirmation notification
         sendVolunteerJoinedNotification(user, searchGroup);
 
-        return savedVolunteer;
+        return new JoinSearchGroupResult(savedVolunteer, false, reactivated);
+    }
+
+    public record JoinSearchGroupResult(
+            Volunteer volunteer,
+            boolean alreadyMember,
+            boolean reactivated) {
     }
 
     /**

@@ -3,6 +3,7 @@ package com.example.pettracker.controller;
 import com.example.pettracker.dto.SearchGroupCreateRequest;
 import com.example.pettracker.dto.SearchGroupDto;
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
+import com.example.pettracker.dto.JoinSearchGroupResponse;
 import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.dto.VolunteerDto;
 import com.example.pettracker.entity.Pet;
@@ -273,10 +274,24 @@ public class SearchGroupController {
     }
 
     @PostMapping("/{searchGroupId}/join")
-    public ResponseEntity<VolunteerDto> join(@PathVariable Long searchGroupId, Authentication authentication) {
+    public ResponseEntity<JoinSearchGroupResponse> join(
+            @PathVariable Long searchGroupId,
+            Authentication authentication) {
         User user = currentUser(authentication);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(SearchGroupMapper.toDto(volunteerService.joinSearchGroup(user.getId(), searchGroupId)));
+        VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(
+                user.getId(), searchGroupId);
+        String message = result.alreadyMember()
+                ? "Ya perteneces a este grupo de búsqueda."
+                : result.reactivated()
+                        ? "Te has unido nuevamente al grupo de búsqueda."
+                        : "Te has unido al grupo de búsqueda correctamente.";
+        JoinSearchGroupResponse response = new JoinSearchGroupResponse(
+                SearchGroupMapper.toDto(result.volunteer()),
+                message,
+                result.alreadyMember(),
+                result.reactivated());
+        return ResponseEntity.status(result.alreadyMember() ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(response);
     }
 
     @PostMapping("/{searchGroupId}/volunteers/{userId}")
