@@ -114,6 +114,28 @@ class VolunteerServiceTest {
     }
 
     @Test
+    void joinReportsAlreadyActiveMembershipWithoutCreatingAnotherRecord() {
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).groupName("Find Milo").build();
+        Volunteer existing = Volunteer.builder()
+                .id(80L)
+                .user(member)
+                .searchGroup(group)
+                .active(true)
+                .build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(member));
+        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(existing);
+
+        VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(2L, 50L);
+
+        assertSame(existing, result.volunteer());
+        assertTrue(result.alreadyMember());
+        assertFalse(result.reactivated());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+    }
+
+    @Test
     void creatorCanUpdateGroup() {
         User owner = user(1L, "Owner", "owner@example.com");
         SearchGroup group = SearchGroup.builder()

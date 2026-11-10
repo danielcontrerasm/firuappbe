@@ -7,6 +7,7 @@ const state = {
     alerts: [],
     requests: [],
     dogWalks: [],
+    searchGroups: [],
     adminMetrics: null,
     selectedRequest: null,
     selectedWalk: null,
@@ -26,6 +27,7 @@ const el = {
     dashboardBand: document.getElementById("dashboardBand"),
     alertsPanel: document.getElementById("alertsPanel"),
     alertsList: document.getElementById("alertsList"),
+    searchGroupsList: document.getElementById("searchGroupsList"),
     dashboardGreeting: document.getElementById("dashboardGreeting"),
     dashboardSubtitle: document.getElementById("dashboardSubtitle"),
     dashboardRole: document.getElementById("dashboardRole"),
@@ -78,10 +80,12 @@ document.getElementById("logoutBtn").addEventListener("click", logout);
 document.getElementById("refreshWalkersBtn").addEventListener("click", loadPublicWalkers);
 document.getElementById("refreshDashboardBtn").addEventListener("click", refreshDashboard);
 document.getElementById("refreshAlertsBtn").addEventListener("click", refreshAlerts);
+document.getElementById("refreshSearchGroupsBtn").addEventListener("click", refreshSearchGroups);
 document.getElementById("refreshMapBtn").addEventListener("click", refreshSelectedWalkMap);
 document.getElementById("sendMyPositionBtn").addEventListener("click", sendCurrentPosition);
 document.getElementById("completeWalkBtn").addEventListener("click", completeSelectedWalk);
 document.getElementById("alertsList").addEventListener("click", dismissAlert);
+document.getElementById("searchGroupsList").addEventListener("click", joinSearchGroup);
 document.querySelectorAll("[data-demo-email]").forEach((button) => {
     button.addEventListener("click", () => fillDemoLogin(button.dataset.demoEmail));
 });
@@ -142,6 +146,7 @@ function logout() {
     state.pets = [];
     state.petWalkDistancesByPetId = {};
     state.alerts = [];
+    state.searchGroups = [];
     state.requests = [];
     state.dogWalks = [];
     state.selectedRequest = null;
@@ -216,7 +221,8 @@ async function refreshDashboard() {
         loadPublicWalkers(),
         loadRequests(),
         loadDogWalks(),
-        loadAlerts()
+        loadAlerts(),
+        loadSearchGroups()
     ];
 
     if (state.me && state.me.role !== "WALKER") {
@@ -248,6 +254,42 @@ async function loadPublicWalkers() {
 async function loadAlerts() {
     state.alerts = await api("/api/alerts");
     renderAlerts();
+}
+
+async function loadSearchGroups() {
+    state.searchGroups = await api("/api/search-groups");
+    renderSearchGroups();
+}
+
+async function refreshSearchGroups() {
+    if (!state.token || !state.me) {
+        return;
+    }
+    try {
+        await loadSearchGroups();
+        toast("Grupos de búsqueda actualizados.");
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+async function joinSearchGroup(event) {
+    const button = event.target.closest("[data-join-search-group]");
+    if (!button) {
+        return;
+    }
+
+    button.disabled = true;
+    try {
+        const response = await api(`/api/search-groups/${button.dataset.joinSearchGroup}/join`, {
+            method: "POST"
+        });
+        toast(response.message || "Respuesta recibida del grupo.");
+        await loadSearchGroups();
+    } catch (error) {
+        button.disabled = false;
+        toast(error.message);
+    }
 }
 
 async function refreshAlerts() {
@@ -466,6 +508,7 @@ function renderDashboard() {
         renderAdminWalkers();
     }
     renderAlerts();
+    renderSearchGroups();
     renderWalkers();
 }
 
@@ -521,6 +564,42 @@ function renderAlerts() {
                 <small>${escapeHtml(formatDateTime(alert.createdAt))}</small>
             </div>
             <button type="button" class="icon-button" data-dismiss-alert="${alert.id}">Ocultar</button>
+        </article>
+    `).join("");
+}
+
+function renderSearchGroups() {
+    if (!el.searchGroupsList) {
+        return;
+    }
+    if (!state.me) {
+        el.searchGroupsList.innerHTML = `<div class="empty-state">Inicia sesión para ver y apoyar grupos de búsqueda.</div>`;
+        return;
+    }
+    if (!state.searchGroups.length) {
+        el.searchGroupsList.innerHTML = `<div class="empty-state">No hay grupos de búsqueda visibles.</div>`;
+        return;
+    }
+
+    el.searchGroupsList.innerHTML = state.searchGroups.map((group) => `
+        <article class="list-item search-group-card">
+            <header>
+                <div>
+                    <strong>${escapeHtml(group.groupName || "Grupo de búsqueda")}</strong>
+                    <div class="muted">${escapeHtml(group.petName || "Mascota sin nombre")}</div>
+                </div>
+                <span class="tag ${String(group.status || "").toLowerCase() === "active" ? "ok" : "warn"}">
+                    ${escapeHtml(group.status || "Sin estado")}
+                </span>
+            </header>
+            <p>${escapeHtml(group.description || "Ayuda a coordinar la búsqueda de esta mascota.")}</p>
+            <div class="meta-line">
+                <span>${escapeHtml([group.area, group.city].filter(Boolean).join(" · ") || "Zona sin definir")}</span>
+                <span>${formatNumber(group.membersCount || 0)} voluntario(s)</span>
+            </div>
+            <button type="button" class="icon-button" data-join-search-group="${group.id}">
+                Unirme al grupo
+            </button>
         </article>
     `).join("");
 }

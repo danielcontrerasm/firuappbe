@@ -356,6 +356,11 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `POST` | `/api/search-groups/{id}/volunteers/{userId}` | Add a volunteer |
 | `DELETE` | `/api/search-groups/{id}/volunteers/{userId}` | Remove a volunteer |
 
+`POST /api/search-groups/{id}/join` does not require a request body. A new or
+reactivated membership returns `201 Created`; repeating the request for an
+already active member returns `200 OK`. Both responses contain `volunteer`,
+`message`, `alreadyMember`, and `reactivated`.
+
 Group chat messages use JSON such as `{ "body": "I am searching the north side." }`.
 Only active volunteers, the pet/group owner, and administrators can read or send messages.
 

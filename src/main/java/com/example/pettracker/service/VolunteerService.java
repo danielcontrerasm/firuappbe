@@ -64,7 +64,9 @@ public class VolunteerService {
             .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
         SearchGroup searchGroup = searchGroupRepository.findById(searchGroupId)
-            .orElseThrow(() -> new RuntimeException("Search group not found with id: " + searchGroupId));
+            .orElseThrow(() -> new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Search group not found with id: " + searchGroupId));
 
         Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
         if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getActive())) {
