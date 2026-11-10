@@ -356,6 +356,11 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `POST` | `/api/search-groups/{id}/volunteers/{userId}` | Add a volunteer |
 | `DELETE` | `/api/search-groups/{id}/volunteers/{userId}` | Remove a volunteer |
 
+Search groups are private: non-admin users only see groups where they are the
+owner/creator or have an active volunteer membership. A lost-pet status does
+not make a group public, and an unknown group id is intentionally returned as
+`404` to users without access.
+
 `POST /api/search-groups/{id}/join` does not require a request body. A new or
 reactivated membership returns `201 Created`; repeating the request for an
 already active member returns `200 OK`. Both responses contain `volunteer`,

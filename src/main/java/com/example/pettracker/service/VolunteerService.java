@@ -69,6 +69,11 @@ public class VolunteerService {
                     "Search group not found with id: " + searchGroupId));
 
         Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
+        if (existingVolunteer == null && !canAccessSearchGroup(user, searchGroup)) {
+            // Joining is not a public discovery mechanism. The group must
+            // already have been shared with this user by an owner/admin.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
+        }
         if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getActive())) {
             log.warn("User {} is already an active volunteer in search group {}", userId, searchGroupId);
             return new JoinSearchGroupResult(existingVolunteer, true, false);
@@ -89,6 +94,29 @@ public class VolunteerService {
             Volunteer volunteer,
             boolean alreadyMember,
             boolean reactivated) {
+    }
+
+    public boolean canAccessSearchGroup(User user, SearchGroup searchGroup) {
+        if (user == null || searchGroup == null) {
+            return false;
+        }
+        if (user.getRole() == User.Role.ADMIN) {
+            return true;
+        }
+
+        Pet pet = searchGroup.getPet();
+        boolean owner = pet != null
+                && pet.getOwner() != null
+                && user.getId().equals(pet.getOwner().getId());
+        boolean creator = searchGroup.getCreatedBy() != null
+                && user.getId().equals(searchGroup.getCreatedBy().getId());
+        if (owner || creator) {
+            return true;
+        }
+
+        Volunteer membership = volunteerRepository.findByUserIdAndSearchGroupId(
+                user.getId(), searchGroup.getId());
+        return membership != null && Boolean.TRUE.equals(membership.getActive());
     }
 
     /**
@@ -315,7 +343,8 @@ public class VolunteerService {
         boolean petOwner = actingUser != null && searchGroup.getPet() != null && searchGroup.getPet().getOwner() != null
                 && actingUser.getId().equals(searchGroup.getPet().getOwner().getId());
         if (!admin && !creator && !petOwner) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group owner or an admin can manage this group");
+            // Hide private-group existence from users who guess an id.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
     }
 

@@ -15,6 +15,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -132,6 +133,27 @@ class VolunteerServiceTest {
         assertSame(existing, result.volunteer());
         assertTrue(result.alreadyMember());
         assertFalse(result.reactivated());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+    }
+
+    @Test
+    void unrelatedUserCannotJoinPrivateGroupByGuessingItsId() {
+        User owner = user(1L, "Owner", "owner@example.com");
+        User outsider = user(2L, "Outsider", "outsider@example.com");
+        SearchGroup group = SearchGroup.builder()
+                .id(50L)
+                .createdBy(owner)
+                .groupName("Find Milo")
+                .build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(outsider));
+        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(null);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> volunteerService.joinSearchGroupWithResult(2L, 50L));
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
         verify(volunteerRepository, never()).save(any(Volunteer.class));
     }
 

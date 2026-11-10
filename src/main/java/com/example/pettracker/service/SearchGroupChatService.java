@@ -107,8 +107,7 @@ public class SearchGroupChatService {
         boolean activeMember = membership != null && Boolean.TRUE.equals(membership.getActive());
 
         if (!creator && !petOwner && !activeMember) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only active group members can access the group chat");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
     }
 

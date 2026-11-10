@@ -15,7 +15,6 @@ import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.UserService;
 import com.example.pettracker.service.VolunteerService;
 import java.util.List;
-import java.util.Objects;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.data.domain.PageRequest;
@@ -190,14 +189,9 @@ public class SearchGroupController {
             return ResponseEntity.notFound().build();
         }
 
-        boolean owner = group.getPet() != null
-                && group.getPet().getOwner() != null
-                && user.getId().equals(group.getPet().getOwner().getId());
-        if (user.getRole() != User.Role.ADMIN
-                && !owner
-                && (group.getPet() == null || group.getPet().getStatus() != Pet.Status.LOST)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Not allowed to access this search group");
+        if (!volunteerService.canAccessSearchGroup(user, group)) {
+            // Do not reveal whether a private group exists to an outsider.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
 
         SearchGroupDto result = user.getRole() == User.Role.ADMIN
@@ -212,15 +206,13 @@ public class SearchGroupController {
             @PathVariable Long searchGroupId,
             Authentication authentication) {
         User user = currentUser(authentication);
+        SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
+        if (group == null || !volunteerService.canAccessSearchGroup(user, group)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group image not found");
+        }
         VolunteerService.SearchGroupImage image = volunteerService.findImageById(searchGroupId);
         if (image == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group image not found");
-        }
-
-        boolean owner = Objects.equals(user.getId(), image.petOwnerId());
-        boolean publicLostGroup = image.petStatus() == Pet.Status.LOST;
-        if (user.getRole() != User.Role.ADMIN && !owner && !publicLostGroup) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this group image");
         }
 
         return ResponseEntity.ok()
@@ -243,10 +235,9 @@ public class SearchGroupController {
                     .map(SearchGroupMapper::toDto)
                     .toList();
         }
-        // Non-admin users see their own groups plus the lost-pet wall,
-        // without account/member details.
-        return searchGroupRepository.findVisibleToUser(
-                        user.getId(), Pet.Status.LOST, pageRequest(page, size)).stream()
+        // Groups are private. Non-admin users only see active memberships.
+        return searchGroupRepository.findByActiveVolunteerUserId(
+                        user.getId(), pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toPublicDto)
                 .toList();
     }
@@ -264,12 +255,15 @@ public class SearchGroupController {
             return List.of();
         }
         boolean owner = pet.getOwner() != null && user.getId().equals(pet.getOwner().getId());
-        if (user.getRole() != User.Role.ADMIN && !owner && pet.getStatus() != Pet.Status.LOST) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this pet's groups");
+        if (user.getRole() == User.Role.ADMIN || owner) {
+            boolean fullDetails = user.getRole() == User.Role.ADMIN;
+            return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
+                    .map(fullDetails ? SearchGroupMapper::toDto : SearchGroupMapper::toPublicDto)
+                    .toList();
         }
-        boolean fullDetails = user.getRole() == User.Role.ADMIN;
-        return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
-                .map(fullDetails ? SearchGroupMapper::toDto : SearchGroupMapper::toPublicDto)
+        return searchGroupRepository.findByPetIdAndActiveVolunteerUserId(
+                        petId, user.getId(), pageRequest(page, size)).stream()
+                .map(SearchGroupMapper::toPublicDto)
                 .toList();
     }
 
@@ -347,6 +341,9 @@ public class SearchGroupController {
         SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
         if (group == null) {
             return List.of();
+        }
+        if (!volunteerService.canAccessSearchGroup(user, group)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
         boolean owner = group.getPet() != null && group.getPet().getOwner() != null
                 && user.getId().equals(group.getPet().getOwner().getId());

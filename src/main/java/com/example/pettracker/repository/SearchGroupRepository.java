@@ -16,16 +16,28 @@ public interface SearchGroupRepository extends JpaRepository<SearchGroup, Long> 
 
     List<SearchGroup> findByPetId(Long petId, Pageable pageable);
 
-    List<SearchGroup> findByPetStatus(Pet.Status status, Pageable pageable);
+    @Query("""
+            SELECT DISTINCT g
+            FROM SearchGroup g
+            JOIN Volunteer v ON v.searchGroup = g
+            WHERE v.user.id = :userId
+              AND v.active = true
+            """)
+    List<SearchGroup> findByActiveVolunteerUserId(
+            @Param("userId") Long userId,
+            Pageable pageable);
 
     @Query("""
-            SELECT g
+            SELECT DISTINCT g
             FROM SearchGroup g
-            WHERE g.pet.owner.id = :ownerId
-               OR g.pet.status = :status
+            JOIN Volunteer v ON v.searchGroup = g
+            WHERE g.pet.id = :petId
+              AND v.user.id = :userId
+              AND v.active = true
             """)
-    List<SearchGroup> findVisibleToUser(
-            @Param("ownerId") Long ownerId,
-            @Param("status") Pet.Status status,
+    List<SearchGroup> findByPetIdAndActiveVolunteerUserId(
+            @Param("petId") Long petId,
+            @Param("userId") Long userId,
             Pageable pageable);
+
 }
