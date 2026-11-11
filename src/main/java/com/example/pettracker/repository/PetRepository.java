@@ -12,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface PetRepository extends JpaRepository<Pet, Long> {
 
+    long countByOwnerId(Long ownerId);
+
     @Override
     @EntityGraph(attributePaths = "owner")
     List<Pet> findAll();
