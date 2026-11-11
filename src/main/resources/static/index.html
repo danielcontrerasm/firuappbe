@@ -266,6 +266,43 @@
                         <button type="submit">Compartir acceso</button>
                     </form>
 
+                    <form id="temporaryAccessForm" class="stack-form compact">
+                        <h4>Acceso temporal para cuidador o paseador</h4>
+                        <small class="muted">Se crea o reutiliza la cuenta del correo indicado y se envían las credenciales por email. El acceso queda limitado a esta mascota.</small>
+                        <select name="petId" required>
+                            <option value="">Selecciona la mascota</option>
+                        </select>
+                        <input name="email" type="email" placeholder="Correo del cuidador o paseador" required>
+                        <label>Inicio <input name="startsAt" type="datetime-local" required></label>
+                        <label>Vencimiento <input name="expiresAt" type="datetime-local" required></label>
+                        <label class="checkbox-row"><input name="recurring" type="checkbox"> Horario recurrente (solo Premium)</label>
+                        <div class="temporary-recurring-fields">
+                            <span class="muted">Días recurrentes</span>
+                            <div class="checkbox-grid">
+                                <label><input name="recurringDays" value="MONDAY" type="checkbox"> Lun</label>
+                                <label><input name="recurringDays" value="TUESDAY" type="checkbox"> Mar</label>
+                                <label><input name="recurringDays" value="WEDNESDAY" type="checkbox"> Mié</label>
+                                <label><input name="recurringDays" value="THURSDAY" type="checkbox"> Jue</label>
+                                <label><input name="recurringDays" value="FRIDAY" type="checkbox"> Vie</label>
+                                <label><input name="recurringDays" value="SATURDAY" type="checkbox"> Sáb</label>
+                                <label><input name="recurringDays" value="SUNDAY" type="checkbox"> Dom</label>
+                            </div>
+                            <div class="form-row">
+                                <label>Desde <input name="recurringStartTime" type="time"></label>
+                                <label>Hasta <input name="recurringEndTime" type="time"></label>
+                            </div>
+                        </div>
+                        <span class="muted">Permisos</span>
+                        <div class="checkbox-grid">
+                            <label><input name="canViewLocation" type="checkbox" checked> Ubicación</label>
+                            <label><input name="canViewAlerts" type="checkbox" checked> Alertas</label>
+                            <label><input name="canViewHistory" type="checkbox" checked> Historial</label>
+                        </div>
+                        <button type="submit">Enviar acceso temporal</button>
+                        <div id="temporaryAccessMessage" class="muted"></div>
+                        <div id="temporaryAccessList" class="list-stack"></div>
+                    </form>
+
                     <div>
                         <h4>Mis mascotas</h4>
                         <div id="petsList" class="list-stack"></div>

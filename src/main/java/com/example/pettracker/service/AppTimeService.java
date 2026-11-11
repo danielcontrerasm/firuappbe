@@ -19,6 +19,10 @@ public class AppTimeService {
         return LocalDateTime.now(zoneId);
     }
 
+    public Instant nowInstant() {
+        return Instant.now();
+    }
+
     public LocalDateTime fromInstant(Instant instant) {
         return LocalDateTime.ofInstant(instant, zoneId);
     }

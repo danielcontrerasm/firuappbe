@@ -24,16 +24,19 @@ public class PetAccessService {
     private final PetRepository petRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
+    private final TemporaryPetAccessService temporaryPetAccessService;
 
     public PetAccessService(
             PetAccessRepository petAccessRepository,
             PetRepository petRepository,
             UserRepository userRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            TemporaryPetAccessService temporaryPetAccessService) {
         this.petAccessRepository = petAccessRepository;
         this.petRepository = petRepository;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
+        this.temporaryPetAccessService = temporaryPetAccessService;
     }
 
     public SharedPerson share(Long petId, ShareRequest request, Authentication authentication) {
@@ -100,7 +103,36 @@ public class PetAccessService {
         }
         return user.getId() != null
                 && pet.getId() != null
+                && (petAccessRepository.findByPetIdAndUserId(pet.getId(), user.getId()).isPresent()
+                || temporaryPetAccessService.canAccess(user, pet));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canViewLocation(User user, Pet pet) {
+        if (isOwnerOrAdmin(user, pet)) return true;
+        return canAccessPermanent(user, pet) || temporaryPetAccessService.canViewLocation(user, pet);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canViewHistory(User user, Pet pet) {
+        if (isOwnerOrAdmin(user, pet)) return true;
+        return canAccessPermanent(user, pet) || temporaryPetAccessService.canViewHistory(user, pet);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Pet> currentlyAccessibleTemporaryPets(User user) {
+        return temporaryPetAccessService.currentlyAccessiblePets(user);
+    }
+
+    private boolean canAccessPermanent(User user, Pet pet) {
+        return user != null && pet != null && user.getId() != null && pet.getId() != null
                 && petAccessRepository.findByPetIdAndUserId(pet.getId(), user.getId()).isPresent();
+    }
+
+    private boolean isOwnerOrAdmin(User user, Pet pet) {
+        return user != null && pet != null
+                && (user.getRole() == User.Role.ADMIN
+                || (pet.getOwner() != null && user.getId().equals(pet.getOwner().getId())));
     }
 
     private Pet requirePet(Long petId) {

@@ -180,7 +180,8 @@ public class PetService {
     @Transactional(readOnly = true)
     public List<LocationDTO> getLocations(Long id, Authentication authentication) {
         User user = currentUserService.require(authentication);
-        requireAccessiblePet(id, authentication);
+        Pet pet = requireAccessiblePet(id, authentication);
+        requireLocationAccess(user, pet);
         LocalDateTime now = locationService.now();
         LocalDateTime from = now.minusDays(defaultHistoryWindowDays(user));
         return locationService.getPetRouteBetween(id, from.toString(), now.toString());
@@ -188,14 +189,17 @@ public class PetService {
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getRouteLast3Hours(Long id, Authentication authentication) {
-        requireAccessiblePet(id, authentication);
+        User user = currentUserService.require(authentication);
+        Pet pet = requireAccessiblePet(id, authentication);
+        requireLocationAccess(user, pet);
         return locationService.getPetRouteLast3Hours(id);
     }
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getRouteBetween(Long id, String from, String to, Authentication authentication) {
         User user = currentUserService.require(authentication);
-        requireAccessiblePet(id, authentication);
+        Pet pet = requireAccessiblePet(id, authentication);
+        requireHistoryAccess(user, pet);
         LocalDateTime fromTimestamp = locationService.parseRequestTimestamp(from);
         LocalDateTime toTimestamp = locationService.parseRequestTimestamp(to);
         if (from == null || from.isBlank()) {
@@ -241,6 +245,7 @@ public class PetService {
         User user = currentUserService.require(authentication);
         PlanPolicy.requirePremiumExport(user);
         Pet pet = requireAccessiblePet(id, authentication);
+        requireHistoryAccess(user, pet);
 
         LocalDateTime now = locationService.now();
         LocalDateTime end = to == null || to.isBlank() ? now : locationService.parseRequestTimestamp(to);
@@ -413,21 +418,36 @@ public class PetService {
 
     public List<Pet> listForUser(User user) {
         if (user.getRole() == User.Role.ADMIN) return petRepository.findAll();
-        return petRepository.findAccessibleForUser(user.getId());
+        return mergePets(petRepository.findAccessibleForUser(user.getId()),
+                petAccessService.currentlyAccessibleTemporaryPets(user));
     }
 
     public List<Pet> listForUser(User user, int page, int size) {
-        Pageable pageable = pageRequest(page, size);
         if (user.getRole() == User.Role.ADMIN) {
-            return petRepository.findAll(pageable).getContent();
+            return petRepository.findAll(pageRequest(page, size)).getContent();
         }
-        return petRepository.findAccessibleForUser(user.getId(), pageable);
+        List<Pet> pets = petAccessService == null
+                ? petRepository.findAccessibleForUser(user.getId())
+                : mergePets(petRepository.findAccessibleForUser(user.getId()),
+                petAccessService.currentlyAccessibleTemporaryPets(user));
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+        int from = Math.min(safePage * safeSize, pets.size());
+        int to = Math.min(from + safeSize, pets.size());
+        return pets.subList(from, to);
     }
 
     private Pageable pageRequest(int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "id"));
+    }
+
+    private List<Pet> mergePets(List<Pet> first, List<Pet> second) {
+        java.util.LinkedHashMap<Long, Pet> merged = new java.util.LinkedHashMap<>();
+        first.forEach(pet -> merged.put(pet.getId(), pet));
+        second.forEach(pet -> merged.putIfAbsent(pet.getId(), pet));
+        return new java.util.ArrayList<>(merged.values());
     }
 
     private Pet requireAccessiblePet(Long id, Authentication authentication) {
@@ -448,6 +468,18 @@ public class PetService {
             throw forbidden();
         }
         return pet;
+    }
+
+    private void requireLocationAccess(User user, Pet pet) {
+        if (petAccessService != null && !petAccessService.canViewLocation(user, pet)) {
+            throw forbidden();
+        }
+    }
+
+    private void requireHistoryAccess(User user, Pet pet) {
+        if (petAccessService != null && !petAccessService.canViewHistory(user, pet)) {
+            throw forbidden();
+        }
     }
 
     private boolean canAccessPet(User user, Pet pet) {

@@ -76,6 +76,10 @@ document.getElementById("walkerApplicationForm").addEventListener("submit", appl
 document.getElementById("petForm").addEventListener("submit", createPet);
 document.getElementById("searchGroupForm").addEventListener("submit", createSearchGroup);
 document.getElementById("petShareForm").addEventListener("submit", sharePet);
+document.getElementById("temporaryAccessForm").addEventListener("submit", createTemporaryAccess);
+document.querySelector("#temporaryAccessForm select[name=petId]").addEventListener("change", loadTemporaryAccesses);
+document.querySelector("#temporaryAccessForm [name=recurring]").addEventListener("change", updateTemporaryAccessFormState);
+document.getElementById("temporaryAccessList").addEventListener("click", revokeTemporaryAccess);
 document.getElementById("messageForm").addEventListener("submit", sendMessage);
 document.getElementById("adminCreateWalkerForm").addEventListener("submit", createWalkerByAdmin);
 document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -345,6 +349,71 @@ async function loadPets() {
     await loadPetWalkDistances();
     renderSearchGroupPetOptions();
     renderPetShareOptions();
+    renderTemporaryAccessPetOptions();
+    updateTemporaryAccessFormState();
+}
+
+async function createTemporaryAccess(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = formToObject(form);
+    const recurring = form.querySelector('[name="recurring"]').checked;
+    const body = {
+        email: payload.email,
+        startsAt: new Date(payload.startsAt).toISOString(),
+        expiresAt: new Date(payload.expiresAt).toISOString(),
+        recurring,
+        recurringDays: [...form.querySelectorAll('[name="recurringDays"]:checked')].map((input) => input.value),
+        recurringStartTime: payload.recurringStartTime || null,
+        recurringEndTime: payload.recurringEndTime || null,
+        canViewLocation: form.querySelector('[name="canViewLocation"]').checked,
+        canViewAlerts: form.querySelector('[name="canViewAlerts"]').checked,
+        canViewHistory: form.querySelector('[name="canViewHistory"]').checked
+    };
+    try {
+        await api(`/api/pets/${payload.petId}/temporary-access`, { method: "POST", body: JSON.stringify(body) });
+        form.querySelector('[name="email"]').value = "";
+        document.getElementById("temporaryAccessMessage").textContent = "Acceso creado y correo enviado.";
+        toast("Acceso temporal enviado por correo.");
+        await loadTemporaryAccesses();
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+async function loadTemporaryAccesses() {
+    const petId = document.querySelector("#temporaryAccessForm select[name=petId]").value;
+    const list = document.getElementById("temporaryAccessList");
+    if (!petId) {
+        list.innerHTML = "";
+        return;
+    }
+    try {
+        const accesses = await api(`/api/pets/${petId}/temporary-access`);
+        list.innerHTML = accesses.length ? accesses.map((access) => `
+            <article class="list-item compact-item">
+                <strong>${escapeHtml(access.userEmail || access.userName || "Usuario")}</strong>
+                <div class="meta-line"><span>${formatDateTime(access.startsAt)} → ${formatDateTime(access.expiresAt)}</span><span>${access.currentlyActive ? "Activo ahora" : access.active ? "Programado" : "Revocado"}</span></div>
+                <button type="button" class="icon-button" data-revoke-temporary-access="${access.id}" ${access.active ? "" : "disabled"}>Revocar</button>
+            </article>`).join("") : `<div class="empty-state compact-empty">No hay accesos temporales para esta mascota.</div>`;
+    } catch (error) {
+        list.innerHTML = `<div class="empty-state compact-empty">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function revokeTemporaryAccess(event) {
+    const button = event.target.closest("[data-revoke-temporary-access]");
+    if (!button) return;
+    const petId = document.querySelector("#temporaryAccessForm select[name=petId]").value;
+    button.disabled = true;
+    try {
+        await api(`/api/pets/${petId}/temporary-access/${button.dataset.revokeTemporaryAccess}`, { method: "DELETE" });
+        toast("Acceso temporal revocado.");
+        await loadTemporaryAccesses();
+    } catch (error) {
+        button.disabled = false;
+        toast(error.message);
+    }
 }
 
 async function sharePet(event) {
@@ -395,6 +464,33 @@ function renderPetShareOptions() {
         .map((pet) => `<option value="${pet.id}">${escapeHtml(pet.name)} · #${pet.id}</option>`)
         .join("");
     select.value = current;
+}
+
+function renderTemporaryAccessPetOptions() {
+    const select = document.querySelector("#temporaryAccessForm select[name=petId]");
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Selecciona la mascota</option>` + state.pets
+        .map((pet) => `<option value="${pet.id}">${escapeHtml(pet.name)} · #${pet.id}</option>`)
+        .join("");
+    select.value = current;
+}
+
+function updateTemporaryAccessFormState() {
+    const form = document.getElementById("temporaryAccessForm");
+    if (!form || !state.me) return;
+    const plan = state.me.plan || "BASIC";
+    const basic = plan === "BASIC" && state.me.role !== "ADMIN";
+    const recurring = form.querySelector('[name="recurring"]');
+    form.querySelectorAll("input, select, button").forEach((input) => {
+        if (input.dataset.revokeTemporaryAccess) return;
+        input.disabled = basic;
+    });
+    recurring.disabled = basic || plan !== "PREMIUM";
+    form.querySelector(".temporary-recurring-fields").hidden = !recurring.checked || recurring.disabled;
+    form.querySelector("#temporaryAccessMessage").textContent = basic
+        ? "Disponible desde el plan Family."
+        : plan === "PREMIUM" ? "Premium permite horarios recurrentes." : "Family permite accesos con fecha de inicio y vencimiento.";
 }
 
 async function exportPetHistory(event) {

@@ -19,10 +19,15 @@ public class AlertService {
 
     private final AlertRepository alertRepository;
     private final CurrentUserService currentUserService;
+    private final TemporaryPetAccessService temporaryPetAccessService;
 
-    public AlertService(AlertRepository alertRepository, CurrentUserService currentUserService) {
+    public AlertService(
+            AlertRepository alertRepository,
+            CurrentUserService currentUserService,
+            TemporaryPetAccessService temporaryPetAccessService) {
         this.alertRepository = alertRepository;
         this.currentUserService = currentUserService;
+        this.temporaryPetAccessService = temporaryPetAccessService;
     }
 
     public Alert createAlert(Pet pet, Alert.AlertType alertType, String metadata) {
@@ -58,8 +63,21 @@ public class AlertService {
         User user = currentUserService.require(authentication);
         List<Alert> alerts = user.getRole() == User.Role.ADMIN
                 ? alertRepository.findByStatusOrderByCreatedAtDesc(Alert.Status.OPEN)
-                : alertRepository.findByPetOwnerIdAndStatusOrderByCreatedAtDesc(user.getId(), Alert.Status.OPEN);
+                : mergeOwnerAndTemporaryAlerts(user);
         return alerts.stream().map(AlertService::toDto).toList();
+    }
+
+    private List<Alert> mergeOwnerAndTemporaryAlerts(User user) {
+        List<Alert> ownerAlerts = alertRepository.findByPetOwnerIdAndStatusOrderByCreatedAtDesc(
+                user.getId(), Alert.Status.OPEN);
+        List<Alert> temporaryAlerts = temporaryPetAccessService.activeAlertPetIds(user).stream()
+                .flatMap(petId -> alertRepository.findByPetIdOrderByCreatedAtDesc(petId).stream())
+                .filter(alert -> alert.getStatus() == Alert.Status.OPEN)
+                .toList();
+        return java.util.stream.Stream.concat(ownerAlerts.stream(), temporaryAlerts.stream())
+                .sorted(java.util.Comparator.comparing(Alert::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
     }
 
     public void dismissForCurrentUser(Long alertId, Authentication authentication) {

@@ -46,6 +46,7 @@ public class SecurityConfig {
                         "/app.css",
                         "/app.js",
                         "/api/auth/**",
+                        "/api/temporary-access/accept",
                         "/api/public/**",
                         "/api/walker-applications",
                         "/ws/**",
