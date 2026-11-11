@@ -12,6 +12,12 @@ import com.example.pettracker.mapper.PetMapper;
 import com.example.pettracker.repository.PetRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,9 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
-import java.io.IOException;
 import java.util.Set;
-import java.util.List;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -48,9 +52,33 @@ public class PetService {
     private final PetWalkDistanceService petWalkDistanceService;
     private final PetMapper petMapper;
     private final ImageUploadLimits imageUploadLimits;
+    private final PetAccessService petAccessService;
     @Autowired
     private LostPetNotificationService lostPetNotificationService;
 
+    @Autowired
+    public PetService(
+            PetRepository petRepository,
+            GpsIngestionService gpsIngestionService,
+            CurrentUserService currentUserService,
+            UserService userService,
+            LocationService locationService,
+            PetWalkDistanceService petWalkDistanceService,
+            PetMapper petMapper,
+            ImageUploadLimits imageUploadLimits,
+            PetAccessService petAccessService) {
+        this.petRepository = petRepository;
+        this.gpsIngestionService = gpsIngestionService;
+        this.currentUserService = currentUserService;
+        this.userService = userService;
+        this.locationService = locationService;
+        this.petWalkDistanceService = petWalkDistanceService;
+        this.petMapper = petMapper;
+        this.imageUploadLimits = imageUploadLimits;
+        this.petAccessService = petAccessService;
+    }
+
+    /** Backward-compatible constructor used by lightweight unit tests. */
     public PetService(
             PetRepository petRepository,
             GpsIngestionService gpsIngestionService,
@@ -68,6 +96,7 @@ public class PetService {
         this.petWalkDistanceService = petWalkDistanceService;
         this.petMapper = petMapper;
         this.imageUploadLimits = imageUploadLimits;
+        this.petAccessService = null;
     }
 
     @Transactional(readOnly = true)
@@ -102,7 +131,7 @@ public class PetService {
 
     @Transactional
     public PetDto update(Long id, PetDto request, MultipartFile image, Authentication authentication) {
-        Pet existing = requireAccessiblePet(id, authentication);
+        Pet existing = requireManageablePet(id, authentication);
         User user = currentUserService.require(authentication);
         petMapper.applyToEntity(existing, request);
         if (user.getRole() == User.Role.ADMIN && request.ownerId() != null) {
@@ -120,7 +149,11 @@ public class PetService {
         if (image == null) {
             throw notFound("Pet image not found");
         }
-        if (user.getRole() != User.Role.ADMIN && !Objects.equals(user.getId(), image.ownerId())) {
+        Pet pet = petRepository.findById(id).orElse(null);
+        boolean canView = petAccessService != null
+                ? petAccessService.canAccess(user, pet)
+                : user.getRole() == User.Role.ADMIN || Objects.equals(user.getId(), image.ownerId());
+        if (!canView) {
             throw forbidden();
         }
         return image;
@@ -128,26 +161,29 @@ public class PetService {
 
     @Transactional
     public void delete(Long id, Authentication authentication) {
-        requireAccessiblePet(id, authentication);
+        requireManageablePet(id, authentication);
         delete(id);
     }
 
     @Transactional
     public PetDto markPetAsLost(Long id, Authentication authentication) {
-        requireAccessiblePet(id, authentication);
+        requireManageablePet(id, authentication);
         return petMapper.toDtoWithNeighborhood(markPetAsLost(id));
     }
 
     @Transactional
     public PetDto markPetAsFound(Long id, Authentication authentication) {
-        requireAccessiblePet(id, authentication);
+        requireManageablePet(id, authentication);
         return petMapper.toDtoWithNeighborhood(markPetAsFound(id));
     }
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getLocations(Long id, Authentication authentication) {
+        User user = currentUserService.require(authentication);
         requireAccessiblePet(id, authentication);
-        return locationService.getByPetId(id);
+        LocalDateTime now = locationService.now();
+        LocalDateTime from = now.minusDays(defaultHistoryWindowDays(user));
+        return locationService.getPetRouteBetween(id, from.toString(), now.toString());
     }
 
     @Transactional(readOnly = true)
@@ -158,8 +194,176 @@ public class PetService {
 
     @Transactional(readOnly = true)
     public List<LocationDTO> getRouteBetween(Long id, String from, String to, Authentication authentication) {
+        User user = currentUserService.require(authentication);
         requireAccessiblePet(id, authentication);
-        return locationService.getPetRouteBetween(id, from, to);
+        LocalDateTime fromTimestamp = locationService.parseRequestTimestamp(from);
+        LocalDateTime toTimestamp = locationService.parseRequestTimestamp(to);
+        if (from == null || from.isBlank()) {
+            fromTimestamp = toTimestamp.minusDays(defaultHistoryWindowDays(user));
+        }
+        if (fromTimestamp.isAfter(toTimestamp)) {
+            throw new IllegalArgumentException("from must be before or equal to to");
+        }
+        PlanPolicy.requireHistoryWindow(user, fromTimestamp, locationService.now());
+        return locationService.getPetRouteBetween(id, fromTimestamp.toString(), toTimestamp.toString());
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportHistory(Long id, String from, String to, Authentication authentication) {
+        ExportHistoryData report = loadExportHistory(id, from, to, authentication);
+        StringBuilder csv = new StringBuilder("id,petId,petName,timestamp,latitude,longitude,batteryPercent,batteryVoltage,city,address,neighborhood,comuna\n");
+        report.locations().forEach(location -> csv.append(csv(location.id())).append(',')
+                .append(csv(location.petId())).append(',')
+                .append(csv(location.petName())).append(',')
+                .append(csv(location.timestamp())).append(',')
+                .append(location.latitude()).append(',')
+                .append(location.longitude()).append(',')
+                .append(csv(location.batteryPercent())).append(',')
+                .append(csv(location.batteryVoltage())).append(',')
+                .append(csv(location.city())).append(',')
+                .append(csv(location.address())).append(',')
+                .append(csv(location.neighborhood())).append(',')
+                .append(csv(location.comuna())).append('\n'));
+        return csv.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportHistoryPdf(Long id, String from, String to, Authentication authentication) {
+        ExportHistoryData report = loadExportHistory(id, from, to, authentication);
+        return buildPdf(report);
+    }
+
+    private ExportHistoryData loadExportHistory(
+            Long id,
+            String from,
+            String to,
+            Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        PlanPolicy.requirePremiumExport(user);
+        Pet pet = requireAccessiblePet(id, authentication);
+
+        LocalDateTime now = locationService.now();
+        LocalDateTime end = to == null || to.isBlank() ? now : locationService.parseRequestTimestamp(to);
+        LocalDateTime start = from == null || from.isBlank()
+                ? end.minusDays(defaultHistoryWindowDays(user))
+                : locationService.parseRequestTimestamp(from);
+        PlanPolicy.requireHistoryWindow(user, start, now);
+        List<LocationDTO> locations = locationService.getPetRouteBetweenForExport(id, start, end);
+        return new ExportHistoryData(pet, start, end, locations);
+    }
+
+    private byte[] buildPdf(ExportHistoryData report) {
+        List<String> lines = new ArrayList<>();
+        lines.add("PetTracker - Reporte de rutas");
+        lines.add("Mascota: " + safeText(report.pet().getName()) + " (#" + report.pet().getId() + ")");
+        lines.add("Periodo: " + report.from() + " a " + report.to());
+        lines.add("Puntos registrados: " + report.locations().size());
+        lines.add("");
+        lines.add("Fecha y hora                         Latitud        Longitud       Bateria");
+        for (LocationDTO location : report.locations()) {
+            String battery = location.batteryPercent() == null ? "-" : location.batteryPercent() + "%";
+            lines.add(String.format(Locale.ROOT,
+                    "%s   %.6f   %.6f   %s",
+                    safeText(location.timestamp()),
+                    location.latitude(),
+                    location.longitude(),
+                    battery));
+        }
+
+        final int linesPerPage = 54;
+        int pageCount = Math.max(1, (lines.size() + linesPerPage - 1) / linesPerPage);
+        int firstPageId = 3;
+        int firstContentId = firstPageId + pageCount;
+        int fontId = firstContentId + pageCount;
+        List<String> objects = new ArrayList<>();
+        objects.add("<< /Type /Catalog /Pages 2 0 R >>");
+
+        StringBuilder pageKids = new StringBuilder();
+        for (int page = 0; page < pageCount; page++) {
+            pageKids.append(firstPageId + page).append(" 0 R ");
+        }
+        objects.add("<< /Type /Pages /Kids [" + pageKids + "] /Count " + pageCount + " >>");
+
+        for (int page = 0; page < pageCount; page++) {
+            int contentId = firstContentId + page;
+            objects.add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] "
+                    + "/Resources << /Font << /F1 " + fontId + " 0 R >> >> "
+                    + "/Contents " + contentId + " 0 R >>");
+        }
+
+        for (int page = 0; page < pageCount; page++) {
+            int start = page * linesPerPage;
+            int end = Math.min(lines.size(), start + linesPerPage);
+            StringBuilder content = new StringBuilder("BT\n/F1 9 Tf\n40 800 Td\n");
+            for (int index = start; index < end; index++) {
+                content.append('(').append(pdfText(lines.get(index))).append(") Tj\n0 -14 Td\n");
+            }
+            content.append("ET\n");
+            byte[] contentBytes = content.toString().getBytes(StandardCharsets.US_ASCII);
+            objects.add("<< /Length " + contentBytes.length + " >>\nstream\n"
+                    + content + "endstream");
+        }
+        objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+        try {
+            return writePdf(objects);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not generate PDF report", exception);
+        }
+    }
+
+    private byte[] writePdf(List<String> objects) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        writeAscii(output, "%PDF-1.4\n");
+        List<Integer> offsets = new ArrayList<>();
+        for (int index = 0; index < objects.size(); index++) {
+            offsets.add(output.size());
+            writeAscii(output, (index + 1) + " 0 obj\n" + objects.get(index) + "\nendobj\n");
+        }
+        int xrefOffset = output.size();
+        writeAscii(output, "xref\n0 " + (objects.size() + 1) + "\n");
+        writeAscii(output, "0000000000 65535 f \n");
+        for (Integer offset : offsets) {
+            writeAscii(output, String.format(Locale.ROOT, "%010d 00000 n \n", offset));
+        }
+        writeAscii(output, "trailer\n<< /Size " + (objects.size() + 1) + " /Root 1 0 R >>\n"
+                + "startxref\n" + xrefOffset + "\n%%EOF\n");
+        return output.toByteArray();
+    }
+
+    private void writeAscii(ByteArrayOutputStream output, String value) throws IOException {
+        output.write(value.getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private String pdfText(String value) {
+        StringBuilder escaped = new StringBuilder();
+        for (char character : safeText(value).toCharArray()) {
+            if (character < 32 || character > 126) {
+                escaped.append('?');
+            } else if (character == '(' || character == ')' || character == '\\') {
+                escaped.append('\\').append(character);
+            } else {
+                escaped.append(character);
+            }
+        }
+        return escaped.toString();
+    }
+
+    private String safeText(String value) {
+        return value == null ? "-" : value;
+    }
+
+    private record ExportHistoryData(Pet pet, LocalDateTime from, LocalDateTime to, List<LocationDTO> locations) {
+    }
+
+    private String csv(Object value) {
+        if (value == null) return "";
+        String text = String.valueOf(value);
+        return "\"" + text.replace("\"", "\"\"") + "\"";
+    }
+
+    private int defaultHistoryWindowDays(User user) {
+        return user.getRole() == User.Role.ADMIN ? 365 : PlanPolicy.historyDays(user);
     }
 
     @Transactional
@@ -180,7 +384,7 @@ public class PetService {
 
     @Transactional
     public LocationDTO addLocation(Long id, LocationRequest request, Authentication authentication) {
-        Pet pet = requireAccessiblePet(id, authentication);
+        Pet pet = requireManageablePet(id, authentication);
         LocalDateTime timestamp = locationService.parseRequestTimestamp(request.getTimestamp());
         Location location = Location.builder()
                 .pet(pet)
@@ -209,7 +413,7 @@ public class PetService {
 
     public List<Pet> listForUser(User user) {
         if (user.getRole() == User.Role.ADMIN) return petRepository.findAll();
-        return petRepository.findByOwnerId(user.getId());
+        return petRepository.findAccessibleForUser(user.getId());
     }
 
     public List<Pet> listForUser(User user, int page, int size) {
@@ -217,7 +421,7 @@ public class PetService {
         if (user.getRole() == User.Role.ADMIN) {
             return petRepository.findAll(pageable).getContent();
         }
-        return petRepository.findByOwnerId(user.getId(), pageable);
+        return petRepository.findAccessibleForUser(user.getId(), pageable);
     }
 
     private Pageable pageRequest(int page, int size) {
@@ -235,7 +439,21 @@ public class PetService {
         return pet;
     }
 
+    private Pet requireManageablePet(Long id, Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        Pet pet = petRepository.findById(id).orElseThrow(() -> notFound("Pet not found"));
+        boolean ownerOrAdmin = user.getRole() == User.Role.ADMIN
+                || (pet.getOwner() != null && user.getId().equals(pet.getOwner().getId()));
+        if (!ownerOrAdmin) {
+            throw forbidden();
+        }
+        return pet;
+    }
+
     private boolean canAccessPet(User user, Pet pet) {
+        if (petAccessService != null && petAccessService.canAccess(user, pet)) {
+            return true;
+        }
         return user.getRole() == User.Role.ADMIN
                 || (pet.getOwner() != null
                 && pet.getOwner().getId() != null

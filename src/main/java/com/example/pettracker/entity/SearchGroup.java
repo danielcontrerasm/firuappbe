@@ -26,6 +26,10 @@ public class SearchGroup {
 
     private String groupName;
 
+    /** PRIVATE preserves the original behavior; PUBLIC is discoverable and joinable by anyone. */
+    @Builder.Default
+    private String visibility = "PRIVATE";
+
     @Column(length = 1000)
     private String description;
 

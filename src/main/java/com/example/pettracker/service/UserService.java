@@ -25,4 +25,11 @@ public class UserService {
     public User findById(Long id) {
         return userRepository.findById(id).orElse(null);
     }
+
+    public User updatePlan(Long id, User.Plan plan) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setPlan(plan == null ? User.Plan.BASIC : plan);
+        return userRepository.save(user);
+    }
 }

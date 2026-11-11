@@ -82,6 +82,7 @@ public class WalkerMarketplaceDtos {
             String email,
             String phone,
             User.Role role,
+            User.Plan plan,
             Long walkerProfileId
     ) {}
 

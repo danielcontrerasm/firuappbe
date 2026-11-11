@@ -107,7 +107,8 @@ public class DemoGpsSimulator {
     }
 
     private Geofence findOrCreateDemoCircleGeofence(Pet pet, Point center) {
-        return geofenceRepository.findByPetId(pet.getId())
+        return geofenceRepository.findAllByPetIdOrderByIdAsc(pet.getId()).stream()
+                .findFirst()
                 .orElseGet(() -> geofenceRepository.save(Geofence.builder()
                         .pet(pet)
                         .type(Geofence.Type.CIRCLE)

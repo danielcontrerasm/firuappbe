@@ -70,6 +70,7 @@ public class SearchGroupController {
         return createSearchGroup(
                 request.petId(),
                 request.groupName(),
+                request.visibility(),
                 request.description(),
                 request.status(),
                 request.area(),
@@ -95,6 +96,7 @@ public class SearchGroupController {
         return createSearchGroup(
                 request.petId(),
                 request.groupName(),
+                request.visibility(),
                 request.description(),
                 request.status(),
                 request.area(),
@@ -111,6 +113,7 @@ public class SearchGroupController {
     private ResponseEntity<SearchGroupDto> createSearchGroup(
             Long petId,
             String groupName,
+            String visibility,
             String description,
             String status,
             String area,
@@ -135,6 +138,7 @@ public class SearchGroupController {
                         pet,
                         user,
                         groupName,
+                        visibility,
                         description,
                         status,
                         area,
@@ -235,8 +239,7 @@ public class SearchGroupController {
                     .map(SearchGroupMapper::toDto)
                     .toList();
         }
-        // Groups are private. Non-admin users only see active memberships.
-        return searchGroupRepository.findByActiveVolunteerUserId(
+        return searchGroupRepository.findDiscoverableForUser(
                         user.getId(), pageRequest(page, size)).stream()
                 .map(SearchGroupMapper::toPublicDto)
                 .toList();

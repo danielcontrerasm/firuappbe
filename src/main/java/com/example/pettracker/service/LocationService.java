@@ -119,6 +119,13 @@ public class LocationService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<LocationDTO> getPetRouteBetweenForExport(Long petId, LocalDateTime from, LocalDateTime to) {
+        return locationRepository.findPetRouteBetweenAll(petId, from, to).stream()
+                .map(locationMapper::toDto)
+                .toList();
+    }
+
     public LocalDateTime now() {
         return appTimeService.now();
     }

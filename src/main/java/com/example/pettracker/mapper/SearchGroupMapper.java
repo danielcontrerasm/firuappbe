@@ -28,6 +28,7 @@ public class SearchGroupMapper {
         return new SearchGroupDto(
                 searchGroup.getId(),
                 searchGroup.getGroupName(),
+                visibility(searchGroup),
                 searchGroup.getDescription(),
                 searchGroup.getStatus(),
                 searchGroup.getArea(),
@@ -56,6 +57,7 @@ public class SearchGroupMapper {
         return new SearchGroupDto(
                 searchGroup.getId(),
                 searchGroup.getGroupName(),
+                visibility(searchGroup),
                 searchGroup.getDescription(),
                 searchGroup.getStatus(),
                 searchGroup.getArea(),
@@ -101,6 +103,10 @@ public class SearchGroupMapper {
         return searchGroup.getImageContentType() == null || searchGroup.getId() == null
                 ? null
                 : "/api/search-groups/" + searchGroup.getId() + "/image";
+    }
+
+    private static String visibility(SearchGroup searchGroup) {
+        return "PUBLIC".equalsIgnoreCase(searchGroup.getVisibility()) ? "PUBLIC" : "PRIVATE";
     }
 
     private static VolunteerMemberDto toVolunteerMemberDto(User user) {

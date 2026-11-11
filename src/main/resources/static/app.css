@@ -674,6 +674,51 @@ code {
     grid-column: span 6;
 }
 
+.plans-band {
+    overflow: hidden;
+}
+
+.plans-table-wrap {
+    overflow-x: auto;
+}
+
+.plans-table {
+    width: 100%;
+    min-width: 780px;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.plans-table th,
+.plans-table td {
+    padding: .8rem .9rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.plans-table thead th {
+    background: var(--surface-alt);
+    color: var(--ink);
+}
+
+.plans-table thead th:not(:first-child) {
+    color: var(--accent);
+}
+
+.plans-table tbody th {
+    width: 28%;
+    font-weight: 700;
+}
+
+.plans-table tbody tr:last-child th,
+.plans-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
 .action-strip {
     display: flex;
     flex-wrap: wrap;
@@ -684,6 +729,37 @@ code {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.75rem;
+}
+
+.search-banner {
+    display: flex;
+    align-items: baseline;
+    gap: .65rem;
+    flex-wrap: wrap;
+    margin: -.25rem -.25rem 1rem;
+    padding: .9rem 1rem;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #fff0c2, #ffd9a8);
+    color: #633b00;
+    font-size: 1.1rem;
+    border: 2px solid #f0b44d;
+}
+
+.search-banner-label {
+    flex-basis: 100%;
+    font-size: .72rem;
+    letter-spacing: .12em;
+    font-weight: 800;
+}
+
+.search-banner strong {
+    font-size: 1.35rem;
+}
+
+.pet-report-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
 }
 
 .message-item small,

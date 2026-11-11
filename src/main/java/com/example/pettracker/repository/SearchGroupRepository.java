@@ -16,6 +16,8 @@ public interface SearchGroupRepository extends JpaRepository<SearchGroup, Long> 
 
     List<SearchGroup> findByPetId(Long petId, Pageable pageable);
 
+    long countByCreatedById(Long userId);
+
     @Query("""
             SELECT DISTINCT g
             FROM SearchGroup g
@@ -39,5 +41,16 @@ public interface SearchGroupRepository extends JpaRepository<SearchGroup, Long> 
             @Param("petId") Long petId,
             @Param("userId") Long userId,
             Pageable pageable);
+
+    @Query("""
+            SELECT DISTINCT g
+            FROM SearchGroup g
+            LEFT JOIN Volunteer v ON v.searchGroup = g
+                AND v.user.id = :userId
+                AND v.active = true
+            WHERE UPPER(COALESCE(g.visibility, 'PRIVATE')) = 'PUBLIC'
+               OR v.id IS NOT NULL
+            """)
+    List<SearchGroup> findDiscoverableForUser(@Param("userId") Long userId, Pageable pageable);
 
 }

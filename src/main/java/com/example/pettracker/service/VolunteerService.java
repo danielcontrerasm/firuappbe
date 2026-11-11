@@ -69,7 +69,8 @@ public class VolunteerService {
                     "Search group not found with id: " + searchGroupId));
 
         Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
-        if (existingVolunteer == null && !canAccessSearchGroup(user, searchGroup)) {
+        boolean publicGroup = "PUBLIC".equalsIgnoreCase(searchGroup.getVisibility());
+        if (existingVolunteer == null && !publicGroup && !canAccessSearchGroup(user, searchGroup)) {
             // Joining is not a public discovery mechanism. The group must
             // already have been shared with this user by an owner/admin.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
@@ -101,6 +102,9 @@ public class VolunteerService {
             return false;
         }
         if (user.getRole() == User.Role.ADMIN) {
+            return true;
+        }
+        if ("PUBLIC".equalsIgnoreCase(searchGroup.getVisibility())) {
             return true;
         }
 
@@ -161,9 +165,28 @@ public class VolunteerService {
             Double coverageRadiusKm,
             List<Long> volunteerUserIds) {
         return createSearchGroupForLostPet(
+                lostPet, petOwner, groupName, "PRIVATE", description, status, area, city,
+                leaderName, leaderPhone, coverageRadiusKm, volunteerUserIds, null, null);
+    }
+
+    public SearchGroup createSearchGroupForLostPet(
+            Pet lostPet,
+            User petOwner,
+            String groupName,
+            String visibility,
+            String description,
+            String status,
+            String area,
+            String city,
+            String leaderName,
+            String leaderPhone,
+            Double coverageRadiusKm,
+            List<Long> volunteerUserIds) {
+        return createSearchGroupForLostPet(
                 lostPet,
                 petOwner,
                 groupName,
+                visibility,
                 description,
                 status,
                 area,
@@ -180,6 +203,7 @@ public class VolunteerService {
             Pet lostPet,
             User petOwner,
             String groupName,
+            String visibility,
             String description,
             String status,
             String area,
@@ -191,10 +215,18 @@ public class VolunteerService {
             String whatsappGroupLink,
             MultipartFile image) {
         validateCoverageRadius(coverageRadiusKm);
+        int groupLimit = PlanPolicy.searchGroups(petOwner);
+        if (petOwner.getRole() != User.Role.ADMIN
+                && searchGroupRepository.countByCreatedById(petOwner.getId()) >= groupLimit) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Tu plan permite crear hasta " + groupLimit + " grupos de búsqueda");
+        }
         SearchGroup searchGroup = SearchGroup.builder()
             .pet(lostPet)
             .createdBy(petOwner)
             .groupName(groupName != null ? groupName : "Search for " + lostPet.getName())
+            .visibility(normalizeVisibility(visibility))
             .description(description)
             .status(status != null ? status : "active")
             .area(area)
@@ -246,6 +278,9 @@ public class VolunteerService {
                 throw new RuntimeException("groupName cannot be blank");
             }
             searchGroup.setGroupName(request.groupName());
+        }
+        if (request.visibility() != null) {
+            searchGroup.setVisibility(normalizeVisibility(request.visibility()));
         }
         if (request.description() != null) searchGroup.setDescription(request.description());
         if (request.status() != null) {
@@ -352,6 +387,17 @@ public class VolunteerService {
         if (coverageRadiusKm != null && coverageRadiusKm < 0) {
             throw new RuntimeException("coverageRadiusKm cannot be negative");
         }
+    }
+
+    private String normalizeVisibility(String visibility) {
+        if (visibility == null || visibility.isBlank()) {
+            return "PRIVATE";
+        }
+        String normalized = visibility.trim().toUpperCase(Locale.ROOT);
+        if (!"PRIVATE".equals(normalized) && !"PUBLIC".equals(normalized)) {
+            throw new IllegalArgumentException("visibility must be PRIVATE or PUBLIC");
+        }
+        return normalized;
     }
 
     private void setImageIfPresent(SearchGroup searchGroup, MultipartFile image) {

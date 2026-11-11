@@ -30,5 +30,11 @@ public class User {
     @Enumerated(EnumType.STRING)
     private Role role = Role.USER;
 
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Plan plan = Plan.BASIC;
+
     public enum Role { USER, WALKER, ADMIN }
+
+    public enum Plan { BASIC, FAMILY, PREMIUM }
 }

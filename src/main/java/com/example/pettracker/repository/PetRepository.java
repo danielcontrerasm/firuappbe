@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface PetRepository extends JpaRepository<Pet, Long> {
 
@@ -27,6 +29,24 @@ public interface PetRepository extends JpaRepository<Pet, Long> {
 
     @EntityGraph(attributePaths = "owner")
     List<Pet> findByOwnerId(Long ownerId, Pageable pageable);
+
+    @Query("""
+            SELECT DISTINCT p
+            FROM Pet p
+            LEFT JOIN PetAccess access ON access.pet = p
+            WHERE p.owner.id = :userId OR access.user.id = :userId
+            """)
+    @EntityGraph(attributePaths = "owner")
+    List<Pet> findAccessibleForUser(@Param("userId") Long userId);
+
+    @Query("""
+            SELECT DISTINCT p
+            FROM Pet p
+            LEFT JOIN PetAccess access ON access.pet = p
+            WHERE p.owner.id = :userId OR access.user.id = :userId
+            """)
+    @EntityGraph(attributePaths = "owner")
+    List<Pet> findAccessibleForUser(@Param("userId") Long userId, Pageable pageable);
 
     @EntityGraph(attributePaths = "owner")
     Optional<Pet> findByOwnerIdAndNameIgnoreCase(Long ownerId, String name);

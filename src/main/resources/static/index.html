@@ -55,6 +55,11 @@
                         <input name="email" type="email" placeholder="Correo" required>
                         <input name="phone" placeholder="Teléfono">
                         <input name="password" type="password" placeholder="Contraseña" required>
+                        <select name="plan" aria-label="Plan de PetTracker">
+                            <option value="BASIC">Basic · Inicio</option>
+                            <option value="FAMILY">Family · Familia</option>
+                            <option value="PREMIUM">Premium · Plus</option>
+                        </select>
                         <button type="submit">Crear cuenta</button>
                     </form>
 
@@ -112,6 +117,42 @@
                         <button type="submit">Enviar postulación</button>
                     </form>
                 </section>
+            </div>
+        </section>
+
+        <section class="band plans-band" id="plans">
+            <div class="section-head">
+                <div>
+                    <span class="eyebrow">Planes PetTracker</span>
+                    <h2>Elige el nivel de acompañamiento para tu mascota</h2>
+                </div>
+            </div>
+            <div class="plans-table-wrap">
+                <table class="plans-table">
+                    <thead>
+                    <tr>
+                        <th>Beneficio</th>
+                        <th>Basic · Inicio<br><strong>$319.000 COP</strong></th>
+                        <th>Family · Familia<br><strong>$379.000 COP</strong></th>
+                        <th>Premium · Plus<br><strong>$469.000 COP</strong></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr><th>Tiempo total incluido</th><td>3 meses gratis</td><td>3 gratis + 3 pagos</td><td>3 gratis + 9 pagos</td></tr>
+                    <tr><th>Ubicación en vivo, alertas y batería</th><td>Incluidos</td><td>Incluidos</td><td>Incluidos</td></tr>
+                    <tr><th>Modo perdido y comunidad de búsqueda</th><td>Incluidos</td><td>Incluidos</td><td>Incluidos</td></tr>
+                    <tr><th>Personas autorizadas por mascota</th><td>5</td><td>10</td><td>20 o más</td></tr>
+                    <tr><th>Historial de ubicaciones</th><td>Últimos 30 días</td><td>Últimos 90 días</td><td>Hasta 365 días</td></tr>
+                    <tr><th>Zonas seguras</th><td>3</td><td>5</td><td>10</td></tr>
+                    <tr><th>Grupos de búsqueda creados</th><td>1</td><td>3</td><td>5</td></tr>
+                    <tr><th>Acceso temporal para cuidador o paseador</th><td>—</td><td>Incluido</td><td>Incluido, con horarios recurrentes</td></tr>
+                    <tr><th>Resumen de recorridos</th><td>Consulta del día</td><td>Resumen semanal</td><td>Semanal + comparación mensual</td></tr>
+                    <tr><th>Descarga de recorridos e informes</th><td>—</td><td>—</td><td>PDF y archivo de rutas</td></tr>
+                    <tr><th>Soporte por WhatsApp</th><td>Incluido</td><td>Incluido</td><td>Incluido</td></tr>
+                    <tr><th>Sesión personal de configuración</th><td>—</td><td>—</td><td>Una sesión de 15 minutos</td></tr>
+                    <tr><th>Garantía del equipo</th><td>1 año</td><td>1 año</td><td>1 año</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
 
@@ -197,6 +238,32 @@
                         <input name="weight" type="number" min="0" step="0.1" placeholder="Peso">
                         <input name="imei" placeholder="IMEI del tracker">
                         <button type="submit">Guardar mascota</button>
+                    </form>
+
+                    <form id="searchGroupForm" class="stack-form compact">
+                        <h4>Crear grupo de búsqueda</h4>
+                        <select name="petId" required>
+                            <option value="">Selecciona la mascota perdida</option>
+                        </select>
+                        <input name="groupName" placeholder="Nombre del grupo" required>
+                        <select name="visibility" aria-label="Visibilidad del grupo">
+                            <option value="PRIVATE">Privado · solo personas invitadas</option>
+                            <option value="PUBLIC">Público · cualquiera puede verlo y unirse</option>
+                        </select>
+                        <textarea name="description" rows="3" placeholder="Mensaje y detalles para la búsqueda"></textarea>
+                        <input name="area" placeholder="Zona o barrio">
+                        <input name="city" placeholder="Ciudad">
+                        <button type="submit">Crear grupo</button>
+                    </form>
+
+                    <form id="petShareForm" class="stack-form compact">
+                        <h4>Compartir acceso a una mascota</h4>
+                        <select name="petId" required>
+                            <option value="">Selecciona la mascota</option>
+                        </select>
+                        <input name="email" type="email" placeholder="Correo de la persona autorizada" required>
+                        <small class="muted">El límite depende de tu plan: Basic 5 · Family 10 · Premium 20 o más por mascota.</small>
+                        <button type="submit">Compartir acceso</button>
                     </form>
 
                     <div>

@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ContentDisposition;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/pets")
@@ -124,6 +126,29 @@ public class PetController {
             @RequestParam String to,
             Authentication authentication) {
         return ResponseEntity.ok(petService.getRouteBetween(id, from, to, authentication));
+    }
+
+    @GetMapping("/{id}/history/export")
+    public ResponseEntity<byte[]> exportHistory(
+            @PathVariable Long id,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(defaultValue = "csv") String format,
+            Authentication authentication) {
+        boolean pdf = "pdf".equalsIgnoreCase(format);
+        if (!pdf && !"csv".equalsIgnoreCase(format)) {
+            throw new IllegalArgumentException("format must be csv or pdf");
+        }
+        byte[] report = pdf
+                ? petService.exportHistoryPdf(id, from, to, authentication)
+                : petService.exportHistory(id, from, to, authentication);
+        return ResponseEntity.ok()
+                .contentType(pdf ? MediaType.APPLICATION_PDF : new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("pettracker-route-report." + (pdf ? "pdf" : "csv"), StandardCharsets.UTF_8)
+                                .build().toString())
+                .body(report);
     }
 
     @GetMapping("/{id}/neighborhood")

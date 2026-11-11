@@ -6,6 +6,7 @@ import com.example.pettracker.service.GeofencingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/geofences")
@@ -33,13 +34,22 @@ public class GeofenceController {
     }
 
     @GetMapping("/{petId}")
-    public ResponseEntity<GeofenceResponseDto> getByPet(@PathVariable Long petId, Authentication authentication) {
+    public ResponseEntity<List<GeofenceResponseDto>> getByPet(@PathVariable Long petId, Authentication authentication) {
         return ResponseEntity.ok(geofencingService.getByPet(petId, authentication));
     }
 
     @DeleteMapping("/{petId}")
     public ResponseEntity<Void> delete(@PathVariable Long petId, Authentication authentication) {
         geofencingService.deleteByPet(petId, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{petId}/{geofenceId}")
+    public ResponseEntity<Void> deleteOne(
+            @PathVariable Long petId,
+            @PathVariable Long geofenceId,
+            Authentication authentication) {
+        geofencingService.deleteById(petId, geofenceId, authentication);
         return ResponseEntity.noContent().build();
     }
 }

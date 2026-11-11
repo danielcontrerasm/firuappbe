@@ -41,6 +41,7 @@ public class GeofencingService {
     private final VolunteerNotificationService volunteerNotificationService;
     private final CurrentUserService currentUserService;
     private final GeometryFactory geometryFactory;
+    private final PetAccessService petAccessService;
 
     public GeofencingService(GeofenceRepository geofenceRepository,
                              PetRepository petRepository,
@@ -49,7 +50,8 @@ public class GeofencingService {
                              AlertService alertService,
                              VolunteerNotificationService volunteerNotificationService,
                              CurrentUserService currentUserService,
-                             GeometryFactory geometryFactory
+                             GeometryFactory geometryFactory,
+                             PetAccessService petAccessService
     ) {
         this.geofenceRepository = geofenceRepository;
         this.petRepository = petRepository;
@@ -59,11 +61,13 @@ public class GeofencingService {
         this.volunteerNotificationService = volunteerNotificationService;
         this.currentUserService = currentUserService;
         this.geometryFactory = geometryFactory;
+        this.petAccessService = petAccessService;
     }
 
     @Transactional
     public GeofenceResponseDto createCircle(Long petId, CircleRequest request, Authentication authentication) {
-        Pet pet = requireAccessiblePet(petId, authentication);
+        Pet pet = requireManageablePet(petId, authentication);
+        enforceGeofenceLimit(pet, authentication);
         validateCircle(request);
 
         Geofence geofence = Geofence.builder()
@@ -81,7 +85,8 @@ public class GeofencingService {
 
     @Transactional
     public GeofenceResponseDto createPolygon(Long petId, PolygonRequest request, Authentication authentication) {
-        Pet pet = requireAccessiblePet(petId, authentication);
+        Pet pet = requireManageablePet(petId, authentication);
+        enforceGeofenceLimit(pet, authentication);
         Polygon polygon = buildPolygon(request);
 
         Geofence geofence = Geofence.builder()
@@ -96,17 +101,28 @@ public class GeofencingService {
     }
 
     @Transactional(readOnly = true)
-    public GeofenceResponseDto getByPet(Long petId, Authentication authentication) {
+    public List<GeofenceResponseDto> getByPet(Long petId, Authentication authentication) {
         requireAccessiblePet(petId, authentication);
-        return geofenceRepository.findByPetId(petId)
+        return geofenceRepository.findAllByPetIdOrderByIdAsc(petId).stream()
                 .map(GeofenceMapper::toDto)
-                .orElseThrow(() -> notFound("Geofence not found"));
+                .toList();
     }
 
     @Transactional
     public void deleteByPet(Long petId, Authentication authentication) {
-        requireAccessiblePet(petId, authentication);
-        Geofence geofence = geofenceRepository.findByPetId(petId)
+        requireManageablePet(petId, authentication);
+        if (geofenceRepository.countByPetId(petId) == 0) {
+            throw notFound("Geofence not found");
+        }
+        geofenceRepository.deleteByPetId(petId);
+    }
+
+    @Transactional
+    public void deleteById(Long petId, Long geofenceId, Authentication authentication) {
+        requireManageablePet(petId, authentication);
+        Geofence geofence = geofenceRepository.findById(geofenceId)
+                .filter(candidate -> candidate.getPet() != null
+                        && petId.equals(candidate.getPet().getId()))
                 .orElseThrow(() -> notFound("Geofence not found"));
         geofenceRepository.delete(geofence);
     }
@@ -115,11 +131,33 @@ public class GeofencingService {
         Pet pet = petRepository.findById(petId)
                 .orElseThrow(() -> notFound("Pet not found"));
         User current = currentUserService.require(authentication);
-        if (current.getRole() != User.Role.ADMIN
-                && (pet.getOwner() == null || !current.getId().equals(pet.getOwner().getId()))) {
+        if (!petAccessService.canAccess(current, pet)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed to access this pet");
         }
         return pet;
+    }
+
+    private Pet requireManageablePet(Long petId, Authentication authentication) {
+        Pet pet = petRepository.findById(petId)
+                .orElseThrow(() -> notFound("Pet not found"));
+        User current = currentUserService.require(authentication);
+        boolean ownerOrAdmin = current.getRole() == User.Role.ADMIN
+                || (pet.getOwner() != null && current.getId().equals(pet.getOwner().getId()));
+        if (!ownerOrAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the pet owner can manage geofences");
+        }
+        return pet;
+    }
+
+    private void enforceGeofenceLimit(Pet pet, Authentication authentication) {
+        User current = currentUserService.require(authentication);
+        long currentCount = geofenceRepository.countByPetId(pet.getId());
+        int limit = PlanPolicy.geofencesPerPet(current);
+        if (currentCount >= limit) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Tu plan permite hasta " + limit + " zonas seguras por mascota");
+        }
     }
 
     private void validateCircle(CircleRequest request) {
@@ -162,22 +200,21 @@ public class GeofencingService {
     }
 
     public boolean isOutside(Location location) {
-        Geofence g = geofenceRepository.findByPetId(location.getPet().getId()).orElse(null);
-        if (g == null) return false;
+        List<Geofence> geofences = geofenceRepository.findAllByPetIdOrderByIdAsc(location.getPet().getId());
+        if (geofences.isEmpty()) return false;
 
-        // Circle check
-        if (g.getType() == Geofence.Type.CIRCLE && g.getCenterLat()!=null && g.getCenterLng()!=null && g.getRadiusMeters()!=null) {
-            double dist = distanceMeters(g.getCenterLat(), g.getCenterLng(), location.getLatitude(), location.getLongitude());
-            return dist > g.getRadiusMeters();
-        }
-
-        // Polygon check: check if POINT is inside polygon
-        if (g.getType() == Geofence.Type.POLYGON && g.getPolygon() != null) {
-            Point pt = geometryFactory.createPoint(new Coordinate(location.getLongitude(), location.getLatitude()));
-            return !g.getPolygon().contains(pt);
-        }
-
-        return false;
+        Point point = geometryFactory.createPoint(new Coordinate(location.getLongitude(), location.getLatitude()));
+        boolean insideAny = geofences.stream().anyMatch(g -> {
+            if (g.getType() == Geofence.Type.CIRCLE
+                    && g.getCenterLat() != null && g.getCenterLng() != null && g.getRadiusMeters() != null) {
+                double distance = distanceMeters(g.getCenterLat(), g.getCenterLng(), location.getLatitude(), location.getLongitude());
+                return distance <= g.getRadiusMeters();
+            }
+            return g.getType() == Geofence.Type.POLYGON
+                    && g.getPolygon() != null
+                    && g.getPolygon().contains(point);
+        });
+        return !insideAny;
     }
 
     private double distanceMeters(double lat1, double lon1, double lat2, double lon2) {

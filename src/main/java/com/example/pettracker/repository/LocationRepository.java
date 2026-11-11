@@ -18,7 +18,13 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     @EntityGraph(attributePaths = "pet")
     Optional<Location> findTopByPetIdOrderByTimestampDesc(Long petId);
 
-    @Query("SELECT l FROM Location l WHERE l.pet.owner.id = :userId")
+    @Query("""
+            SELECT l
+            FROM Location l
+            WHERE l.pet.owner.id = :userId
+               OR EXISTS (SELECT access.id FROM PetAccess access
+                          WHERE access.pet = l.pet AND access.user.id = :userId)
+            """)
     List<Location> findByUserId(@Param("userId") Long userId);
 
     @Query(value = """
@@ -26,6 +32,10 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     FROM location l
     JOIN pet p ON p.id = l.pet_id
     WHERE p.owner_id = :userId
+       OR EXISTS (
+           SELECT 1 FROM pet_authorized_users access
+           WHERE access.pet_id = p.id AND access.user_id = :userId
+       )
     ORDER BY l.pet_id, l.timestamp DESC
     """, nativeQuery = true)
     List<Location> findLastLocationsByUserId(@Param("userId") Long userId);
@@ -39,6 +49,13 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to,
             Pageable pageable
+    );
+
+    @Query("SELECT l FROM Location l WHERE l.pet.id = :petId AND l.timestamp BETWEEN :from AND :to ORDER BY l.timestamp ASC")
+    List<Location> findPetRouteBetweenAll(
+            @Param("petId") Long petId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to
     );
 
 

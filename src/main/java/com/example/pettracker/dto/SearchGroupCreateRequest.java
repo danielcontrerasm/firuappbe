@@ -5,6 +5,7 @@ import java.util.List;
 public record SearchGroupCreateRequest(
         Long petId,
         String groupName,
+        String visibility,
         String description,
         String status,
         String area,

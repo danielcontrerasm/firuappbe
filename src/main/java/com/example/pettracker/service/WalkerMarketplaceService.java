@@ -227,6 +227,7 @@ public class WalkerMarketplaceService {
                 user.getEmail(),
                 user.getPhone(),
                 user.getRole(),
+                user.getPlan(),
                 walkerProfileId
         );
     }

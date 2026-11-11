@@ -7,7 +7,8 @@ public record CachedUserLookup(
         String name,
         String email,
         String phone,
-        User.Role role
+        User.Role role,
+        User.Plan plan
 ) {
     public static CachedUserLookup from(User user) {
         return new CachedUserLookup(
@@ -15,7 +16,8 @@ public record CachedUserLookup(
                 user.getName(),
                 user.getEmail(),
                 user.getPhone(),
-                user.getRole()
+                user.getRole(),
+                user.getPlan()
         );
     }
 
@@ -26,6 +28,7 @@ public record CachedUserLookup(
         user.setEmail(email);
         user.setPhone(phone);
         user.setRole(role);
+        user.setPlan(plan);
         return user;
     }
 }

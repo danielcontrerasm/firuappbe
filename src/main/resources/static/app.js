@@ -74,6 +74,8 @@ document.getElementById("ownerRegisterForm").addEventListener("submit", register
 document.getElementById("loginForm").addEventListener("submit", login);
 document.getElementById("walkerApplicationForm").addEventListener("submit", applyWalker);
 document.getElementById("petForm").addEventListener("submit", createPet);
+document.getElementById("searchGroupForm").addEventListener("submit", createSearchGroup);
+document.getElementById("petShareForm").addEventListener("submit", sharePet);
 document.getElementById("messageForm").addEventListener("submit", sendMessage);
 document.getElementById("adminCreateWalkerForm").addEventListener("submit", createWalkerByAdmin);
 document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -86,6 +88,7 @@ document.getElementById("sendMyPositionBtn").addEventListener("click", sendCurre
 document.getElementById("completeWalkBtn").addEventListener("click", completeSelectedWalk);
 document.getElementById("alertsList").addEventListener("click", dismissAlert);
 document.getElementById("searchGroupsList").addEventListener("click", joinSearchGroup);
+document.getElementById("petsList").addEventListener("click", exportPetHistory);
 document.querySelectorAll("[data-demo-email]").forEach((button) => {
     button.addEventListener("click", () => fillDemoLogin(button.dataset.demoEmail));
 });
@@ -340,6 +343,85 @@ async function dismissAlert(event) {
 async function loadPets() {
     state.pets = await api("/api/pets");
     await loadPetWalkDistances();
+    renderSearchGroupPetOptions();
+    renderPetShareOptions();
+}
+
+async function sharePet(event) {
+    event.preventDefault();
+    const payload = formToObject(event.currentTarget);
+    try {
+        await api(`/api/pets/${payload.petId}/shares`, {
+            method: "POST",
+            body: JSON.stringify({ email: payload.email })
+        });
+        event.currentTarget.reset();
+        toast("Acceso compartido con la persona autorizada.");
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+async function createSearchGroup(event) {
+    event.preventDefault();
+    const payload = formToObject(event.currentTarget);
+    payload.petId = Number(payload.petId);
+    payload.status = "active";
+    try {
+        await api("/api/search-groups", { method: "POST", body: JSON.stringify(payload) });
+        event.currentTarget.reset();
+        toast(payload.visibility === "PUBLIC" ? "Grupo público creado: cualquiera puede verlo y unirse." : "Grupo privado creado.");
+        await loadSearchGroups();
+    } catch (error) {
+        toast(error.message);
+    }
+}
+
+function renderSearchGroupPetOptions() {
+    const select = document.querySelector("#searchGroupForm select[name=petId]");
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Selecciona la mascota perdida</option>` + state.pets
+        .map((pet) => `<option value="${pet.id}">${escapeHtml(pet.name)} · #${pet.id}</option>`)
+        .join("");
+    select.value = current;
+}
+
+function renderPetShareOptions() {
+    const select = document.querySelector("#petShareForm select[name=petId]");
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Selecciona la mascota</option>` + state.pets
+        .map((pet) => `<option value="${pet.id}">${escapeHtml(pet.name)} · #${pet.id}</option>`)
+        .join("");
+    select.value = current;
+}
+
+async function exportPetHistory(event) {
+    const button = event.target.closest("[data-export-pet-history]");
+    if (!button) return;
+    button.disabled = true;
+    try {
+        const format = button.dataset.exportFormat || "pdf";
+        const response = await fetch(`/api/pets/${button.dataset.exportPetHistory}/history/export?format=${format}`, {
+            headers: { Authorization: `Bearer ${state.token}` }
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => null);
+            throw new Error(data?.message || "La descarga de reportes es exclusiva de Premium.");
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `pettracker-route-report.${format}`;
+        link.click();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        toast(error.message);
+    } finally {
+        button.disabled = false;
+    }
 }
 
 async function loadPetWalkDistances() {
@@ -488,7 +570,8 @@ function renderDashboard() {
     el.dashboardSubtitle.textContent = isWalker
         ? "Revisa solicitudes nuevas, responde a cada familia y comienza el paseo cuando esté confirmado."
         : "Revisa el estado de tus mascotas y encuentra un paseador disponible para tu próximo paseo.";
-    el.dashboardRole.textContent = roleLabel;
+    const planLabel = state.me.plan ? String(state.me.plan).replace("_", " ") : "BASIC";
+    el.dashboardRole.textContent = `${roleLabel} · ${planLabel}`;
     renderDashboardStats(isWalker, isAdmin);
     el.ownerPanel.hidden = isWalker;
     el.walkerPanel.hidden = !isWalker;
@@ -583,6 +666,11 @@ function renderSearchGroups() {
 
     el.searchGroupsList.innerHTML = state.searchGroups.map((group) => `
         <article class="list-item search-group-card">
+            <div class="search-banner">
+                <span class="search-banner-label">BUSCANDO ESTA MASCOTA</span>
+                <strong>${escapeHtml(group.petName || "Mascota")}</strong>
+                <span>Foto #${escapeHtml(String(group.petId || "—"))}</span>
+            </div>
             <header>
                 <div>
                     <strong>${escapeHtml(group.groupName || "Grupo de búsqueda")}</strong>
@@ -592,6 +680,9 @@ function renderSearchGroups() {
                     ${escapeHtml(group.status || "Sin estado")}
                 </span>
             </header>
+            <span class="tag ${group.visibility === "PUBLIC" ? "ok" : "muted"}">
+                ${group.visibility === "PUBLIC" ? "Público · cualquiera puede unirse" : "Privado"}
+            </span>
             <p>${escapeHtml(group.description || "Ayuda a coordinar la búsqueda de esta mascota.")}</p>
             <div class="meta-line">
                 <span>${escapeHtml([group.area, group.city].filter(Boolean).join(" · ") || "Zona sin definir")}</span>
@@ -620,6 +711,12 @@ function renderPets() {
                 <span>${escapeHtml(pet.race || "Sin raza")}</span>
                 <span>${escapeHtml(pet.neighborhood || "Ubicación sin resolver")}</span>
             </div>
+            ${state.me?.plan === "PREMIUM" || state.me?.role === "ADMIN"
+                ? `<div class="pet-report-actions">
+                    <button type="button" class="icon-button" data-export-pet-history="${pet.id}" data-export-format="pdf">Descargar PDF</button>
+                    <button type="button" class="icon-button" data-export-pet-history="${pet.id}" data-export-format="csv">Descargar CSV</button>
+                </div>`
+                : `<button type="button" class="icon-button" data-export-pet-history="${pet.id}" data-export-format="pdf">Reporte · solo Premium</button>`}
             ${renderPetWeeklyDistanceTable(pet)}
         </article>
     `).join("");

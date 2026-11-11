@@ -6,6 +6,7 @@ import java.util.List;
 public record SearchGroupDto(
         Long id,
         String groupName,
+        String visibility,
         String description,
         String status,
         String area,

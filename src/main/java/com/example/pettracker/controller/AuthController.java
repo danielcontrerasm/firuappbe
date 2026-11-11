@@ -48,6 +48,7 @@ public class AuthController {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .phone(request.getPhone())
                 .role(User.Role.USER)
+                .plan(request.getPlan() == null ? User.Plan.BASIC : request.getPlan())
                 .build();
 
         User saved = userService.save(user);
