@@ -16,44 +16,25 @@ public class SearchGroupMapper {
     }
 
     public static SearchGroupDto toDto(SearchGroup searchGroup) {
-        Pet pet = searchGroup.getPet();
-        User createdBy = searchGroup.getCreatedBy();
-        Set<User> volunteers = searchGroup.getVolunteers();
-        List<VolunteerMemberDto> volunteerDtos = volunteers == null
-                ? List.of()
-                : volunteers.stream()
-                        .map(SearchGroupMapper::toVolunteerMemberDto)
-                        .toList();
-
-        return new SearchGroupDto(
-                searchGroup.getId(),
-                searchGroup.getGroupName(),
-                visibility(searchGroup),
-                searchGroup.getDescription(),
-                searchGroup.getStatus(),
-                searchGroup.getArea(),
-                searchGroup.getCity(),
-                volunteerDtos.size(),
-                searchGroup.getLeaderName(),
-                searchGroup.getLeaderPhone(),
-                searchGroup.getCoverageRadiusKm(),
-                searchGroup.getCreatedAt(),
-                pet == null ? null : pet.getId(),
-                pet == null ? null : pet.getName(),
-                pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
-                imageUrl(searchGroup),
-                searchGroup.getWhatsappGroupLink(),
-                createdBy == null ? null : createdBy.getId(),
-                createdBy == null ? null : createdBy.getName(),
-                createdBy == null ? null : createdBy.getEmail(),
-                volunteerDtos
-        );
+        return toDto(searchGroup, true);
     }
 
     /** Public lost-wall representation without account or volunteer user details. */
     public static SearchGroupDto toPublicDto(SearchGroup searchGroup) {
+        return toDto(searchGroup, false);
+    }
+
+    public static SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails) {
         Pet pet = searchGroup.getPet();
+        User createdBy = searchGroup.getCreatedBy();
         Set<User> volunteers = searchGroup.getVolunteers();
+        List<VolunteerMemberDto> volunteerDtos = !includePrivateDetails || volunteers == null
+                ? List.of()
+                : volunteers.stream()
+                        .map(SearchGroupMapper::toVolunteerMemberDto)
+                        .toList();
+        int volunteerCount = volunteers == null ? 0 : volunteers.size();
+
         return new SearchGroupDto(
                 searchGroup.getId(),
                 searchGroup.getGroupName(),
@@ -62,7 +43,7 @@ public class SearchGroupMapper {
                 searchGroup.getStatus(),
                 searchGroup.getArea(),
                 searchGroup.getCity(),
-                volunteers == null ? 0 : volunteers.size(),
+                volunteerCount,
                 searchGroup.getLeaderName(),
                 searchGroup.getLeaderPhone(),
                 searchGroup.getCoverageRadiusKm(),
@@ -72,10 +53,10 @@ public class SearchGroupMapper {
                 pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
                 imageUrl(searchGroup),
                 searchGroup.getWhatsappGroupLink(),
-                null,
-                null,
-                null,
-                List.of()
+                includePrivateDetails && createdBy != null ? createdBy.getId() : null,
+                includePrivateDetails && createdBy != null ? createdBy.getName() : null,
+                includePrivateDetails && createdBy != null ? createdBy.getEmail() : null,
+                volunteerDtos
         );
     }
 

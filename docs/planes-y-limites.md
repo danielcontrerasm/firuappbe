@@ -1,5 +1,7 @@
 # Planes y límites de PetTracker
 
+Esta tabla describe la oferta comercial documentada. El [catálogo de requisitos](catalogo-requisitos.md#planes-y-límites) distingue los límites implementados de las diferencias pendientes, como PREMIUM compartido sin límite en el servicio, resúmenes por plan y activación del plan al registrarse. Los compromisos de soporte, precio y garantía se registran como RF-COM-001 a RF-COM-003; no acreditan facturación o suscripciones automatizadas.
+
 | Beneficio | Basic · Inicio | Family · Familia | Premium · Plus |
 |---|---:|---:|---:|
 | Precio inicial: collar + servicio | $319.000 COP | $379.000 COP | $469.000 COP |

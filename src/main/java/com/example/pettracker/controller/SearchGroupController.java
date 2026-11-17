@@ -1,6 +1,7 @@
 package com.example.pettracker.controller;
 
 import com.example.pettracker.dto.SearchGroupCreateRequest;
+import com.example.pettracker.dto.SearchGroupCreationCommand;
 import com.example.pettracker.dto.SearchGroupDto;
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.JoinSearchGroupResponse;
@@ -12,7 +13,7 @@ import com.example.pettracker.entity.User;
 import com.example.pettracker.mapper.SearchGroupMapper;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.service.PetService;
-import com.example.pettracker.service.UserService;
+import com.example.pettracker.service.CurrentUserService;
 import com.example.pettracker.service.VolunteerService;
 import java.util.List;
 import org.springframework.http.CacheControl;
@@ -46,17 +47,17 @@ public class SearchGroupController {
     private static final int MAX_CANDIDATE_PAGE_SIZE = 20;
 
     private final VolunteerService volunteerService;
-    private final UserService userService;
+    private final CurrentUserService currentUserService;
     private final PetService petService;
     private final SearchGroupRepository searchGroupRepository;
 
     public SearchGroupController(
             VolunteerService volunteerService,
-            UserService userService,
+            CurrentUserService currentUserService,
             PetService petService,
             SearchGroupRepository searchGroupRepository) {
         this.volunteerService = volunteerService;
-        this.userService = userService;
+        this.currentUserService = currentUserService;
         this.petService = petService;
         this.searchGroupRepository = searchGroupRepository;
     }
@@ -64,24 +65,7 @@ public class SearchGroupController {
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
     public ResponseEntity<SearchGroupDto> create(@RequestBody SearchGroupCreateRequest request, Authentication authentication) {
-        if (request.petId() == null) {
-            throw new RuntimeException("petId is required");
-        }
-        return createSearchGroup(
-                request.petId(),
-                request.groupName(),
-                request.visibility(),
-                request.description(),
-                request.status(),
-                request.area(),
-                request.city(),
-                request.leaderName(),
-                request.leaderPhone(),
-                request.coverageRadiusKm(),
-                request.volunteerUserIds(),
-                request.whatsappGroupLink(),
-                null,
-                authentication);
+        return createSearchGroup(request, null, authentication);
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -90,43 +74,18 @@ public class SearchGroupController {
             @RequestPart("group") SearchGroupCreateRequest request,
             @RequestPart(value = "image", required = false) MultipartFile image,
             Authentication authentication) {
-        if (request.petId() == null) {
-            throw new RuntimeException("petId is required");
-        }
-        return createSearchGroup(
-                request.petId(),
-                request.groupName(),
-                request.visibility(),
-                request.description(),
-                request.status(),
-                request.area(),
-                request.city(),
-                request.leaderName(),
-                request.leaderPhone(),
-                request.coverageRadiusKm(),
-                request.volunteerUserIds(),
-                request.whatsappGroupLink(),
-                image,
-                authentication);
+        return createSearchGroup(request, image, authentication);
     }
 
     private ResponseEntity<SearchGroupDto> createSearchGroup(
-            Long petId,
-            String groupName,
-            String visibility,
-            String description,
-            String status,
-            String area,
-            String city,
-            String leaderName,
-            String leaderPhone,
-            Double coverageRadiusKm,
-            List<Long> volunteerUserIds,
-            String whatsappGroupLink,
+            SearchGroupCreateRequest request,
             MultipartFile image,
             Authentication authentication) {
-        User user = currentUser(authentication);
-        Pet pet = petService.findById(petId);
+        if (request == null || request.petId() == null) {
+            throw new RuntimeException("petId is required");
+        }
+        User user = currentUserService.require(authentication);
+        Pet pet = petService.findById(request.petId());
         if (pet == null) {
             return ResponseEntity.notFound().build();
         }
@@ -137,18 +96,19 @@ public class SearchGroupController {
         SearchGroup saved = volunteerService.createSearchGroupForLostPet(
                         pet,
                         user,
-                        groupName,
-                        visibility,
-                        description,
-                        status,
-                        area,
-                        city,
-                        leaderName,
-                        leaderPhone,
-                        coverageRadiusKm,
-                        user.getRole() == User.Role.ADMIN ? volunteerUserIds : List.of(),
-                        whatsappGroupLink,
-                        image);
+                        new SearchGroupCreationCommand(
+                                request.groupName(),
+                                request.visibility(),
+                                request.description(),
+                                request.status(),
+                                request.area(),
+                                request.city(),
+                                request.leaderName(),
+                                request.leaderPhone(),
+                                request.coverageRadiusKm(),
+                                user.getRole() == User.Role.ADMIN ? request.volunteerUserIds() : List.of(),
+                                request.whatsappGroupLink(),
+                                image));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(user.getRole() == User.Role.ADMIN
                         ? SearchGroupMapper.toDto(saved)
@@ -161,7 +121,7 @@ public class SearchGroupController {
             @PathVariable Long searchGroupId,
             @RequestBody SearchGroupUpdateRequest request,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request);
         return user.getRole() == User.Role.ADMIN
                 ? SearchGroupMapper.toDto(updated)
@@ -175,7 +135,7 @@ public class SearchGroupController {
             @RequestPart("group") SearchGroupUpdateRequest request,
             @RequestPart(value = "image", required = false) MultipartFile image,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request, image);
         return user.getRole() == User.Role.ADMIN
                 ? SearchGroupMapper.toDto(updated)
@@ -187,7 +147,7 @@ public class SearchGroupController {
     public ResponseEntity<SearchGroupDto> getById(
             @PathVariable Long searchGroupId,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
         if (group == null) {
             return ResponseEntity.notFound().build();
@@ -209,7 +169,7 @@ public class SearchGroupController {
     public ResponseEntity<byte[]> getImage(
             @PathVariable Long searchGroupId,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
         if (group == null || !volunteerService.canAccessSearchGroup(user, group)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group image not found");
@@ -233,7 +193,7 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         if (user.getRole() == User.Role.ADMIN) {
             return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
                     .map(SearchGroupMapper::toDto)
@@ -252,7 +212,7 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         Pet pet = petService.findById(petId);
         if (pet == null) {
             return List.of();
@@ -274,7 +234,7 @@ public class SearchGroupController {
     public ResponseEntity<JoinSearchGroupResponse> join(
             @PathVariable Long searchGroupId,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(
                 user.getId(), searchGroupId);
         String message = result.alreadyMember()
@@ -297,7 +257,7 @@ public class SearchGroupController {
             @PathVariable Long userId,
             Authentication authentication) {
         VolunteerDto volunteer = SearchGroupMapper.toDto(
-                volunteerService.addVolunteer(searchGroupId, userId, currentUser(authentication)));
+                volunteerService.addVolunteer(searchGroupId, userId, currentUserService.require(authentication)));
         return ResponseEntity.status(HttpStatus.CREATED).body(volunteer);
     }
 
@@ -306,7 +266,7 @@ public class SearchGroupController {
             @PathVariable Long searchGroupId,
             @PathVariable Long userId,
             Authentication authentication) {
-        volunteerService.removeVolunteer(searchGroupId, userId, currentUser(authentication));
+        volunteerService.removeVolunteer(searchGroupId, userId, currentUserService.require(authentication));
         return ResponseEntity.noContent().build();
     }
 
@@ -317,19 +277,20 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             Authentication authentication) {
-        if (currentUser(authentication).getRole() != User.Role.ADMIN) {
+        User user = currentUserService.require(authentication);
+        if (user.getRole() != User.Role.ADMIN) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only administrators can search users");
         }
         return volunteerService.searchVolunteerCandidates(
                 searchGroupId,
                 q,
-                currentUser(authentication),
+                user,
                 candidatePageRequest(page, size));
     }
 
     @PostMapping("/{searchGroupId}/leave")
     public ResponseEntity<Void> leave(@PathVariable Long searchGroupId, Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         volunteerService.leaveSearchGroup(user.getId(), searchGroupId);
         return ResponseEntity.noContent().build();
     }
@@ -340,7 +301,7 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
         if (group == null) {
             return List.of();
@@ -364,7 +325,7 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
-        User user = currentUser(authentication);
+        User user = currentUserService.require(authentication);
         return volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)).stream()
                 .map(user.getRole() == User.Role.ADMIN
                         ? SearchGroupMapper::toDto
@@ -384,11 +345,4 @@ public class SearchGroupController {
         return PageRequest.of(safePage, safeSize, Sort.by("name").ascending().and(Sort.by("email").ascending()));
     }
 
-    private User currentUser(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null) {
-            throw new RuntimeException("Unauthenticated request");
-        }
-        return userService.findByEmail(authentication.getName())
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
-    }
 }

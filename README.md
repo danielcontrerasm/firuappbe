@@ -356,10 +356,17 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `POST` | `/api/search-groups/{id}/volunteers/{userId}` | Add a volunteer |
 | `DELETE` | `/api/search-groups/{id}/volunteers/{userId}` | Remove a volunteer |
 
-Search groups are private: non-admin users only see groups where they are the
-owner/creator or have an active volunteer membership. A lost-pet status does
-not make a group public, and an unknown group id is intentionally returned as
-`404` to users without access.
+Search groups have `PRIVATE` or `PUBLIC` visibility, defaulting to `PRIVATE`.
+Public group details are available to authenticated users. Private details
+require admin, pet owner, creator, or active volunteer access; inaccessible
+groups return `404`. Chat has its own membership checks. Discovery lists have
+some differences from detail authorization; see B12 in the
+[requirements catalogue](docs/catalogo-requisitos.md#brechas-identificadas-en-la-revisión).
+
+Known gap: an existing inactive volunteer can currently reactivate a private
+membership through `join`, including after removal. The reentry policy remains
+pending under D01/RF-GRU-005 in the catalogue; active-membership checks elsewhere
+do not prevent this bypass.
 
 `POST /api/search-groups/{id}/join` does not require a request body. A new or
 reactivated membership returns `201 Created`; repeating the request for an
@@ -676,5 +683,8 @@ docs/
 
 ## Related documentation
 
+- [Code review work plan by functionality](docs/plan-revision-codigo.md)
+- [Numbered functional and non-functional requirements](docs/catalogo-requisitos.md)
+- [HTTP API requirements traceability matrix](docs/matriz-trazabilidad-api.md)
 - [Extended FiruApp design document](docs/firuapp-design-document.md)
 - [FiruApp backend study guide](docs/firuapp-study-guide.md)

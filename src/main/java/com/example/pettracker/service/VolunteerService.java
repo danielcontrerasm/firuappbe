@@ -5,6 +5,7 @@ import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
+import com.example.pettracker.dto.SearchGroupCreationCommand;
 import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.repository.UserRepository;
@@ -151,29 +152,13 @@ public class VolunteerService {
 
     /**
      * Creates a new search group for a lost pet and notifies nearby volunteers
+     * @deprecated use the command-based overload to avoid positional arguments.
      */
+    @Deprecated
     public SearchGroup createSearchGroupForLostPet(
             Pet lostPet,
             User petOwner,
             String groupName,
-            String description,
-            String status,
-            String area,
-            String city,
-            String leaderName,
-            String leaderPhone,
-            Double coverageRadiusKm,
-            List<Long> volunteerUserIds) {
-        return createSearchGroupForLostPet(
-                lostPet, petOwner, groupName, "PRIVATE", description, status, area, city,
-                leaderName, leaderPhone, coverageRadiusKm, volunteerUserIds, null, null);
-    }
-
-    public SearchGroup createSearchGroupForLostPet(
-            Pet lostPet,
-            User petOwner,
-            String groupName,
-            String visibility,
             String description,
             String status,
             String area,
@@ -185,35 +170,38 @@ public class VolunteerService {
         return createSearchGroupForLostPet(
                 lostPet,
                 petOwner,
-                groupName,
-                visibility,
-                description,
-                status,
-                area,
-                city,
-                leaderName,
-                leaderPhone,
-                coverageRadiusKm,
-                volunteerUserIds,
-                null,
-                null);
+                new SearchGroupCreationCommand(
+                        groupName,
+                        "PRIVATE",
+                        description,
+                        status,
+                        area,
+                        city,
+                        leaderName,
+                        leaderPhone,
+                        coverageRadiusKm,
+                        volunteerUserIds,
+                        null,
+                        null));
     }
 
     public SearchGroup createSearchGroupForLostPet(
             Pet lostPet,
             User petOwner,
-            String groupName,
-            String visibility,
-            String description,
-            String status,
-            String area,
-            String city,
-            String leaderName,
-            String leaderPhone,
-            Double coverageRadiusKm,
-            List<Long> volunteerUserIds,
-            String whatsappGroupLink,
-            MultipartFile image) {
+            SearchGroupCreationCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException("Search group creation command is required");
+        }
+        String groupName = command.groupName();
+        String visibility = command.visibility();
+        String description = command.description();
+        String status = command.status();
+        String area = command.area();
+        String city = command.city();
+        String leaderName = command.leaderName();
+        String leaderPhone = command.leaderPhone();
+        Double coverageRadiusKm = command.coverageRadiusKm();
+        List<Long> volunteerUserIds = command.volunteerUserIds();
         validateCoverageRadius(coverageRadiusKm);
         int groupLimit = PlanPolicy.searchGroups(petOwner);
         if (petOwner.getRole() != User.Role.ADMIN
@@ -234,10 +222,10 @@ public class VolunteerService {
             .leaderName(leaderName != null ? leaderName : petOwner.getName())
             .leaderPhone(leaderPhone != null ? leaderPhone : petOwner.getPhone())
             .coverageRadiusKm(coverageRadiusKm)
-            .whatsappGroupLink(normalizeWhatsappGroupLink(whatsappGroupLink))
+            .whatsappGroupLink(normalizeWhatsappGroupLink(command.whatsappGroupLink()))
             .createdAt(Instant.now())
             .build();
-        setImageIfPresent(searchGroup, image);
+        setImageIfPresent(searchGroup, command.image());
 
         SearchGroup savedGroup = searchGroupRepository.save(searchGroup);
         addVolunteerMembership(savedGroup, petOwner);
@@ -657,6 +645,6 @@ public class VolunteerService {
     }
 
     public List<Volunteer> findBySearchGroup_PetIdAndActiveTrue(Long id) {
-       return  volunteerRepository.findBySearchGroup_PetId(id);
+       return volunteerRepository.findBySearchGroup_PetIdAndActiveTrue(id);
     }
 }

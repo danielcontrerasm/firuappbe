@@ -26,5 +26,5 @@ public interface VolunteerRepository extends JpaRepository<Volunteer, Long> {
 
     long countBySearchGroupIdAndActiveTrue(Long searchGroupId);
 
-    List<Volunteer> findBySearchGroup_PetId(Long petId);
+    List<Volunteer> findBySearchGroup_PetIdAndActiveTrue(Long petId);
 }

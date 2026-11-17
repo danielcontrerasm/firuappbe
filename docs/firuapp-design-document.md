@@ -56,144 +56,45 @@ This document defines the current system design, functional and non-functional r
 
 ## 5. Functional Requirements
 
-### Authentication
+The numbered requirements are maintained in the [requirements catalogue](catalogo-requisitos.md), with names, actors, acceptance criteria, implementation status, code references, and existing tests. The [API traceability matrix](matriz-trazabilidad-api.md) maps all 87 distinct HTTP operations in this repository to those requirements.
 
-- Users can register with name, email, password, and phone.
-- Users can log in with email and password.
-- Backend issues JWT tokens.
-- Email matching is case-insensitive.
-- Protected APIs require a valid bearer token.
-- `GET /api/me` returns the authenticated user's ID, name, email, phone, role, and optional walker profile ID.
-- `GET /api/walkers/me` returns the authenticated user's walker profile when one exists.
+The catalogue distinguishes behavior observed in code from partial implementations, unresolved product decisions, future capabilities, and external commercial commitments. An implementation reference is not evidence that acceptance tests have passed.
 
-### Pet Management
+| Area | Requirement IDs |
+| --- | --- |
+| Authentication and session | RF-AUT-001 through RF-AUT-005 |
+| Plans and limits | RF-PLA-001 through RF-PLA-007 |
+| Pets | RF-MAS-001 through RF-MAS-010 |
+| Permanent sharing and temporary caregivers | RF-ACC-001 through RF-ACC-004; RF-TMP-001 through RF-TMP-009 |
+| Locations, routes, geocoding, distance, exports | RF-LOC-001 through RF-LOC-009 |
+| Geofences and alerts | RF-GEO-001 through RF-GEO-007; RF-ALT-001 through RF-ALT-003 |
+| Search groups, membership, and chat | RF-GRU-001 through RF-GRU-017; RF-CHA-001 through RF-CHA-002 |
+| Walker profiles, requests, and walks | RF-PAS-001 through RF-PAS-007; RF-SOL-001 through RF-SOL-007; RF-PSE-001 through RF-PSE-006 |
+| GPS protocols, ingestion, and notifications | RF-GPS-001 through RF-GPS-010; RF-NOT-001 through RF-NOT-007 |
+| Transit | RF-TRA-001 through RF-TRA-015; HTTP routes currently require ADMIN |
+| Administration and static web client | RF-ADM-001 through RF-ADM-002; RF-WEB-001 through RF-WEB-011 |
+| Demonstration data | RF-DEM-001 through RF-DEM-003 |
+| Future or currently excluded capabilities | RF-FUT-001 through RF-FUT-008 |
+| Commercial and operational commitments | RF-COM-001 through RF-COM-003 |
 
-- Owners can create, list, update, and delete pets.
-- Admins can manage pets across owners.
-- Pets can be bound to a GPS tracker IMEI.
-- Pets can have image metadata and image bytes.
-- Pets can be marked `ACTIVE` or `LOST`.
-
-### GPS Tracking
-
-- GPS devices connect to TCP port `5000`.
-- V41/JT808 frames are decoded by the GPS protocol decoder.
-- ASCII bracket GPS frames are partially supported.
-- Decoded GPS updates are persisted asynchronously for tracker-originated updates.
-- Manual API location updates are persisted synchronously.
-- Locations store:
-  - latitude
-  - longitude
-  - timestamp in configured app timezone
-  - battery percentage, when available
-  - battery voltage, when available
-  - pet reference
-- The default app timezone is `America/Bogota`.
-
-### Geofencing
-
-- Owners/admins can create circular and polygon geofences.
-- Owners/admins can read and delete geofences for accessible pets.
-- On location update, the backend checks whether the pet is outside the geofence.
-- Out-of-zone events trigger alerts and notifications.
-
-### Lost Pet Search
-
-- Owners can create and update search groups for lost pets.
-- Group owners and admins can add or remove registered users as volunteers.
-- Volunteers can join and leave search groups.
-- Search groups expose volunteer lists.
-- Volunteers can receive notifications for lost-pet/geofence events.
-- Normal users see search groups for their own pets plus groups published on the lost-pet wall; admins can see all groups.
-- Member-candidate user search is restricted to admins, while group owners/admins manage volunteer membership.
-
-### Dog Walker Marketplace
-
-- Walkers can apply through a public form.
-- Admins can approve, reject, activate, deactivate, create, update, and delete walker profiles.
-- Owners can create walk requests to approved walkers.
-- Walkers can quote requests.
-- Owners can accept, reject, or cancel requests.
-- Owners and walkers can exchange request messages.
-- Walkers can start accepted/negotiating walks.
-- Walkers can post live walk positions.
-- Owners and walkers can view active/historical walks.
-- Walkers can complete walks.
-- The React `/walks` page exposes the marketplace, request detail/chat, walker quote actions, active-walk map, GPS position upload, completion, and admin walker management.
-
-### Admin Metrics
-
-- Admins can view:
-  - total HTTP requests since service start
-  - in-flight HTTP requests
-  - 4xx and 5xx response counts
-  - PostgreSQL committed and rolled-back transactions
-  - open DB connections
-  - app-owned DB connections
-  - active, idle, and idle-in-transaction DB sessions
-  - Hikari active, idle, total, max, and waiters
-  - GPS ingestion dropped task count
-
-### Transit Module
-
-- Users can create and track transit vehicles.
-- Transit locations can be ingested.
-- Transit routes and reports can be queried.
-- Scheduled geofences can be configured for vehicles.
-- Transit search groups and volunteers support incident coordination.
+Sharing and temporary access introduce resource-specific permissions in addition to account roles. Group visibility can be PUBLIC or PRIVATE, while group chat has separate membership checks. Inactive private-group reentry remains an identified gap (B01) pending policy decision D01. See the catalogue for precise current behavior and other discrepancies.
 
 ## 6. Non-Functional Requirements
 
-### Performance
+The detailed, numbered quality requirements and their validation criteria are in the [catalogue](catalogo-requisitos.md#requisitos-no-funcionales).
 
-- Common list endpoints must support pagination.
-- GPS ingestion must not block Netty event loop threads.
-- Database hot paths must use indexes.
-- JPA list mapping should avoid N+1 queries through entity graphs or projections.
-- Location route queries must have bounded result sizes.
+| Quality area | Requirement IDs |
+| --- | --- |
+| Security and privacy | RNF-SEG-001 through RNF-SEG-014 |
+| Performance and capacity | RNF-REN-001 through RNF-REN-009 |
+| Reliability and continuity | RNF-CON-001 through RNF-CON-006 |
+| Data integrity and lifecycle | RNF-DAT-001 through RNF-DAT-007 |
+| Observability | RNF-OBS-001 through RNF-OBS-005 |
+| Deployment and interoperability | RNF-OPE-001 through RNF-OPE-006 |
+| Usability and output compatibility | RNF-USA-001 through RNF-USA-005 |
+| Maintainability and verification | RNF-MAN-001 through RNF-MAN-005 |
 
-### Scalability
-
-- REST API and GPS listener currently run in one service.
-- The design should allow future split of GPS ingestion into a separate service.
-- Thread pools must be configurable by environment variables.
-- Database connection pool size must be configurable.
-
-### Reliability
-
-- GPS ingestion queue overflow must be counted and logged.
-- Notification failures should not crash request processing.
-- Geofence processing should log failures without losing the persisted location.
-- Railway deployment must fail fast if a production JWT secret is missing.
-
-### Security
-
-- JWT is required for protected APIs.
-- Admin routes are protected by `ROLE_ADMIN`.
-- `/api/transit/**` is admin-only in addition to `/api/admin/**`.
-- Public access is limited to static assets, `/api/auth/**`, `/api/public/**`, `/api/walker-applications`, `/ws/**`, and `/error`; all other routes require authentication.
-- Geofence APIs must enforce owner/admin access.
-- Owner-scoped pet APIs must enforce owner/admin access.
-- Normal users must not read sensors, users, transit resources, or other users' private pets and groups; lost-pet-wall groups are the intentional public/redacted exception.
-- CORS allowed origins must be explicitly configured.
-- Passwords must be hashed using BCrypt.
-- JWT secret must not use the local development fallback in production.
-
-### Observability
-
-- Admin metrics endpoint exposes basic app health signals.
-- Hikari leak detection is configured.
-- GPS dropped tasks are counted.
-- PostgreSQL session health is visible through admin metrics.
-- Full production observability should later use Micrometer/Actuator/Prometheus.
-
-### Maintainability
-
-- Controllers should remain thin.
-- Business logic belongs in services.
-- Persistence access belongs in repositories.
-- DTOs should isolate API responses from JPA entities.
-- Timezone handling should use `AppTimeService`.
+Latency, load, availability, retention, backup, and recovery targets require explicit product/operations decisions. Current queue sizes, pools, caches, indexes, and metrics do not establish measured service guarantees. Proposed targets and incomplete controls are marked accordingly; no application or load tests were executed for this documentation review.
 
 ## 7. High-Level Architecture
 
