@@ -6,6 +6,9 @@ import lombok.*;
 import java.time.Instant;
 
 @Entity
+@Table(uniqueConstraints = @UniqueConstraint(
+        name = "uk_volunteer_user_search_group",
+        columnNames = {"user_id", "search_group_id"}))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,4 +28,7 @@ public class Volunteer {
 
     @Builder.Default
     private Boolean active = true;
+
+    @Builder.Default
+    private Boolean revoked = false;
 }

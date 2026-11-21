@@ -1,8 +1,8 @@
 # Plan de revisión del código por funcionalidad
 
-Empezaremos por **unirse y volver a un grupo de búsqueda**, siguiendo `joinSearchGroupWithResult`. Hay una brecha de autorización identificada (B01), el flujo es acotado y existen pruebas que permiten contrastar sus ramas. Después se priorizan los demás accesos a datos privados y las transiciones de negocio.
+La primera unidad, **unirse y volver a un grupo de búsqueda**, ya se recorrió y corrigió en código. La política D01 distingue salida voluntaria de expulsión; el reingreso revocado ahora pasa por solicitud al creador. Las pruebas unitarias de servicio ya se ejecutaron correctamente; quedan pendientes las pruebas HTTP, concurrencia con PostgreSQL real y validación manual antes de marcarla verificada.
 
-Fecha de preparación: 11 de noviembre de 2026. Base: [catálogo de requisitos](catalogo-requisitos.md) y [matriz de API](matriz-trazabilidad-api.md), contrastados con el código local. Este plan está preparado; las revisiones detalladas y sus pruebas aún deben ejecutarse.
+Fecha de revisión: 21 de noviembre de 2026. Base: [catálogo de requisitos](catalogo-requisitos.md) y [matriz de API](matriz-trazabilidad-api.md), contrastados con el código local. La implementación de membresía y solicitudes de reingreso se actualizó; `VolunteerServiceTest` pasó 15/15 casos. Faltan comprobaciones HTTP, PostgreSQL real y notificaciones con proveedores externos.
 
 ## Forma de trabajar
 
@@ -35,7 +35,7 @@ Los bloques 1–13 asignan una revisión principal a cada uno de los **141 RF vi
 | 8 | GPS, ubicaciones e informes | Conexión → tramas/protocolos → ACK → hora/batería → persistencia/colas → posición manual → consultas/rutas → geocodificación → distancias → CSV/PDF. | RF-GPS-001 a RF-GPS-010; RF-LOC-001 a RF-LOC-009 | Calidad del dato, pérdida de posiciones, fechas, límites y exportaciones; B10/B11, D07/D11. |
 | 9 | Geocercas y alertas persistidas | Crear cada geometría → listar/borrar → evaluar posición → crear alerta → consultar/cerrar. | RF-GEO-001 a RF-GEO-007; RF-ALT-001 a RF-ALT-003 | Permisos, bordes, ruido/repetición, destinatarios y decisión D06. |
 | 10 | Canales y eventos de notificación | Correo → SMS/WhatsApp → pérdida/recuperación → aviso a voluntarios → convocatoria. | RF-NOT-001; RF-NOT-002; RF-NOT-004; RF-NOT-005; RF-NOT-007 | B06 y entrega/fallos de proveedores. Completa los efectos ya inspeccionados en bloques 1, 7 y 9. |
-| 11 | Transporte | Vehículos → posiciones/ruta/reporte → zonas programadas/eventos → grupos → entrada/salida de miembros. | RF-TRA-001 a RF-TRA-015 | Autorización ADMIN, horarios, consistencia, límites y eliminación de dependencias. |
+| 11 | Transit (proyecto separado) | Revisar de forma independiente el servicio hermano `../transit`, su persistencia, seguridad, notificaciones y despliegue. | RF-TRA-001 a RF-TRA-015 | Su README advierte que la autenticación FiruApp no fue trasladada y las notificaciones aún son logs. |
 | 12 | Panel web y demostración | Sesión/roles → cada formulario y su API → mapa/posiciones → exportaciones → refresco/tema → datos demo al arrancar/login/tareas. | RF-WEB-001 a RF-WEB-011; RF-DEM-001 a RF-DEM-003 | Verificar la experiencia completa y las diferencias UI/backend; aislamiento de datos sintéticos. |
 | 13 | Métricas administrativas | Autorización → fuentes de métricas → significado y reinicio de contadores → presentación. | RF-ADM-002 | Que las señales operativas permitan detectar problemas y no induzcan conclusiones incorrectas. |
 | 14 | Calidad y operación del sistema | Consolidar controles revisados → consultas/carga/colas → migraciones → retención/restauración → despliegue/cierre → accesibilidad y mantenimiento. | RNF del catálogo: 57 en total | Completar mediciones y escenarios que no se demuestran revisando un único endpoint. Acordar objetivos pendientes antes de evaluarlos. |
@@ -57,8 +57,8 @@ Objetivo: determinar si cada actor puede entrar, si la respuesta representa corr
 | 3 | [VolunteerService.java](../src/main/java/com/example/pettracker/service/VolunteerService.java), `addVolunteerMembership`; [VolunteerRepository.java](../src/main/java/com/example/pettracker/repository/VolunteerRepository.java) | Reutilización de registro, active, joinedAt, colección del grupo y consultas repetidas. |
 | 4 | [Volunteer.java](../src/main/java/com/example/pettracker/entity/Volunteer.java), [SearchGroup.java](../src/main/java/com/example/pettracker/entity/SearchGroup.java), [schema.sql](../src/main/resources/schema.sql) | Relaciones, restricciones de unicidad, transacción y dos intentos simultáneos. |
 | 5 | [VolunteerService.java](../src/main/java/com/example/pettracker/service/VolunteerService.java), `leaveSearchGroup/removeVolunteer/addVolunteer` | De dónde viene active=false y cómo se autoriza una reincorporación. Inspección de dependencias para entender el join. |
-| 6 | [VolunteerService.java](../src/main/java/com/example/pettracker/service/VolunteerService.java), `sendVolunteerJoinedNotification`; [SearchGroupChatService.java](../src/main/java/com/example/pettracker/service/SearchGroupChatService.java) | Notificación ante repetición/rollback y consecuencias de la membresía para leer/escribir chat. |
-| 7 | [VolunteerServiceTest.java](../src/test/java/com/example/pettracker/service/VolunteerServiceTest.java) y pruebas HTTP/BD que hagan falta | Qué casos se comprueban hoy, cuáles faltan y si los resultados representan el contrato aprobado. |
+| 6 | [VolunteerNotificationService.java](../src/main/java/com/example/pettracker/service/VolunteerNotificationService.java), notificaciones de join/reingreso; [SearchGroupChatService.java](../src/main/java/com/example/pettracker/service/SearchGroupChatService.java) | Notificación tras commit, solicitudes repetidas y consecuencias de la membresía para leer/escribir chat. |
+| 7 | [VolunteerServiceTest.java](../src/test/java/com/example/pettracker/service/VolunteerServiceTest.java) y pruebas HTTP/BD que hagan falta | 15 pruebas unitarias pasaron; faltan pruebas HTTP, PostgreSQL real y proveedor de notificaciones para cubrir el contrato completo. |
 
 ### Casos que deben quedar explicados y comprobados
 
@@ -68,21 +68,24 @@ Objetivo: determinar si cada actor puede entrar, si la respuesta representa corr
 | Usuario común, grupo PUBLIC, sin membresía | Crea una membresía activa; 201, alreadyMember=false, reactivated=false. |
 | Miembro ya activo | Responde 200, alreadyMember=true y reactivated=false; no crea otra membresía ni repite aviso. |
 | Usuario común, grupo PRIVATE, sin membresía | Rechaza sin revelar existencia del grupo, actualmente con 404. |
-| Usuario común, grupo PRIVATE, membresía inactiva | Actualmente se reactiva sin comprobar acceso. Contrastar con D01 y demostrar B01; no tratar ese resultado como regla aprobada. |
-| Usuario expulsado que intenta volver | Comprobar que la política elegida impide recuperar acceso sin autorización; el modelo actual no distingue expulsión de salida voluntaria. |
+| Usuario común, grupo PRIVATE, salida voluntaria | El join propio no reactiva la membresía; requiere que dueño/creador/admin lo incorpore. |
+| Miembro revocado intenta volver | POST join crea una solicitud PENDING y responde 202; los intentos repetidos reutilizan la solicitud pendiente. |
+| Creador revisa solicitud | Solo el creador puede listar, aprobar o rechazar. Aprobar reactiva la membresía; rechazar la mantiene revocada. Ambos resultados notifican al solicitante. |
+| Admin, dueño u otro miembro intenta decidir | Solo funciona si esa persona también es el creador; los demás reciben 404. |
 | Dueño de mascota, creador o administrador | Verificar su autorización propia aunque no tenga membresía activa. La mera inactividad no debe confundirse con ausencia de todos los permisos. |
-| Usuario común inactivo en grupo PUBLIC o grupo que cambió de visibilidad | Acordar reingreso/expulsión en D01 y comprobar cambios PRIVATE/PUBLIC. |
+| Usuario que salió voluntariamente, grupo PUBLIC activo | Puede volver por join. Si fue revocado, el join siempre crea solicitud, aunque el grupo sea público. |
+| Grupo cerrado con solicitud pendiente | El creador puede consultar/rechazar; aprobar requiere reabrir primero el grupo. |
 | Grupo inexistente | Responde 404 sin guardar ni notificar. |
 | Dos joins simultáneos | Una membresía lógica y respuestas controladas; comprobar en BD real. Un mock de save no acredita este resultado. |
 | Fallo de transacción o proveedor lento | No anunciar un alta que se revierte; revisar si el envío mantiene abierta la transacción. |
 
-### Decisión concreta a resolver durante esta revisión
+### Decisión aplicada
 
-Propuesta para D01: **un usuario común con membresía inactiva en un grupo privado requiere reincorporación explícita por dueño, creador o administrador**. La operación `addVolunteer` ya ofrece una vía de gestión; su comportamiento se revisa en la siguiente unidad.
+**D01 resuelta:** una salida voluntaria conserva `revoked=false`; se permite volver por join en público activo o mediante alta de un gestor en privado. Una expulsión conserva `revoked=true`; el miembro crea una solicitud y solo el creador la aprueba o rechaza. La aprobación está bloqueada si el grupo está cerrado.
 
-Si el producto debe permitir reingreso libre tras salida voluntaria, hará falta distinguir ese estado de una expulsión. Esta alternativa necesita una regla y modelo de datos explícitos. La propuesta anterior aún no se considera aprobada.
+El esquema marca como revocadas las membresías inactivas preexistentes durante la primera actualización, ya que los datos anteriores no distinguen expulsión de salida voluntaria. Esos miembros tendrán que solicitar reingreso al creador.
 
-Los casos de autorización se revisan primero. Concurrencia (B02) y notificación tras commit (B05) se registran y se trabajan como cambios separados cuando corresponda, con sus propias comprobaciones.
+La serialización por grupo, el índice único de membresía y las notificaciones tras commit también se implementaron. Las 15 pruebas de `VolunteerServiceTest` pasaron; faltan comprobaciones HTTP y carreras con PostgreSQL real, además de confirmar correo/SMS con proveedores externos.
 
 ## Registro y criterio de cierre
 
@@ -99,4 +102,4 @@ Estados de seguimiento: **Pendiente**, **En revisión**, **Pendiente de decisió
 
 El estado de seguimiento pertenece al trabajo de revisión. Los estados OBS/PAR/DEC/PEN/PROP/EXT del catálogo siguen describiendo la situación del requisito y se actualizan cuando exista evidencia.
 
-Primera unidad preparada: **joinSearchGroupWithResult**. Siguiente unidad prevista: **incorporación de un miembro por el gestor**, RF-GRU-002.
+Primera unidad implementada, pendiente de verificación: **join/reingreso y solicitud de aprobación**. Siguiente unidad prevista: **incorporación de un miembro por el gestor**, RF-GRU-002.

@@ -17,7 +17,9 @@ class LostPetNotificationServiceTest {
     void notifyPetLostDelegatesToNotificationServiceLostPetFlow() {
         NotificationService notificationService = mock(NotificationService.class);
         PetRepository petRepository = mock(PetRepository.class);
-        LostPetNotificationService lostPetNotificationService = new LostPetNotificationService(notificationService, petRepository);
+        VolunteerNotificationService volunteerNotificationService = mock(VolunteerNotificationService.class);
+        LostPetNotificationService lostPetNotificationService = new LostPetNotificationService(
+                notificationService, petRepository, volunteerNotificationService);
 
         User owner = User.builder()
                 .id(7L)

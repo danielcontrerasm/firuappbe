@@ -24,6 +24,7 @@ public record SearchGroupDto(
         Long createdById,
         String createdByName,
         String createdByEmail,
-        List<VolunteerMemberDto> volunteers
+        List<VolunteerMemberDto> volunteers,
+        boolean canClose
 ) {
 }

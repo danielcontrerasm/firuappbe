@@ -7,33 +7,53 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
+import com.example.pettracker.repository.VolunteerRepository;
 import java.util.List;
-import java.util.Set;
+import org.springframework.stereotype.Component;
 
+@Component
 public class SearchGroupMapper {
 
-    private SearchGroupMapper() {
+    private final VolunteerRepository volunteerRepository;
+
+    public SearchGroupMapper(VolunteerRepository volunteerRepository) {
+        this.volunteerRepository = volunteerRepository;
     }
 
-    public static SearchGroupDto toDto(SearchGroup searchGroup) {
-        return toDto(searchGroup, true);
+    public SearchGroupDto toDto(SearchGroup searchGroup) {
+        return toDto(searchGroup, true, false);
     }
 
     /** Public lost-wall representation without account or volunteer user details. */
-    public static SearchGroupDto toPublicDto(SearchGroup searchGroup) {
-        return toDto(searchGroup, false);
+    public SearchGroupDto toPublicDto(SearchGroup searchGroup) {
+        return toDto(searchGroup, false, false);
     }
 
-    public static SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails) {
+    public SearchGroupDto toPublicDto(SearchGroup searchGroup, boolean canClose) {
+        return toDto(searchGroup, false, canClose);
+    }
+
+    public SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails, boolean canClose) {
+        return toDtoInternal(searchGroup, includePrivateDetails, canClose);
+    }
+
+    public SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails) {
+        return toDtoInternal(searchGroup, includePrivateDetails, false);
+    }
+
+    private SearchGroupDto toDtoInternal(SearchGroup searchGroup, boolean includePrivateDetails, boolean canClose) {
         Pet pet = searchGroup.getPet();
         User createdBy = searchGroup.getCreatedBy();
-        Set<User> volunteers = searchGroup.getVolunteers();
-        List<VolunteerMemberDto> volunteerDtos = !includePrivateDetails || volunteers == null
+        List<Volunteer> memberships = volunteerRepository
+                .findBySearchGroupIdAndActiveTrueOrderByJoinedAtAsc(searchGroup.getId());
+        List<VolunteerMemberDto> volunteerDtos = !includePrivateDetails
                 ? List.of()
-                : volunteers.stream()
+                : memberships.stream()
+                        .map(Volunteer::getUser)
+                        .filter(user -> user != null)
                         .map(SearchGroupMapper::toVolunteerMemberDto)
                         .toList();
-        int volunteerCount = volunteers == null ? 0 : volunteers.size();
+        int volunteerCount = memberships.size();
 
         return new SearchGroupDto(
                 searchGroup.getId(),
@@ -56,11 +76,12 @@ public class SearchGroupMapper {
                 includePrivateDetails && createdBy != null ? createdBy.getId() : null,
                 includePrivateDetails && createdBy != null ? createdBy.getName() : null,
                 includePrivateDetails && createdBy != null ? createdBy.getEmail() : null,
-                volunteerDtos
+                volunteerDtos,
+                canClose
         );
     }
 
-    public static VolunteerDto toDto(Volunteer volunteer) {
+    public VolunteerDto toDto(Volunteer volunteer) {
         User user = volunteer.getUser();
         SearchGroup searchGroup = volunteer.getSearchGroup();
         Pet pet = searchGroup == null ? null : searchGroup.getPet();

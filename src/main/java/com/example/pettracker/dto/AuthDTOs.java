@@ -21,5 +21,14 @@ public class AuthDTOs {
     @Data @AllArgsConstructor public static class TokenResponse {
         private String token;
     }
+
+    @Data @AllArgsConstructor public static class MessageResponse {
+        private String message;
+    }
+
+    @Data @AllArgsConstructor public static class EmailActionResponse {
+        private boolean emailSent;
+        private String message;
+    }
 }
 

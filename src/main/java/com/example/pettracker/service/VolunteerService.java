@@ -4,15 +4,25 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
+import com.example.pettracker.entity.VolunteerRejoinRequest;
+import com.example.pettracker.entity.VolunteerRejoinRequest.Status;
+import com.example.pettracker.event.SearchGroupCreatedEvent;
+import com.example.pettracker.event.VolunteerJoinedGroupEvent;
+import com.example.pettracker.event.VolunteerAddedToGroupEvent;
+import com.example.pettracker.event.VolunteerRejoinRequestedEvent;
+import com.example.pettracker.event.VolunteerRejoinResolvedEvent;
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.SearchGroupCreationCommand;
 import com.example.pettracker.dto.VolunteerCandidateDto;
+import com.example.pettracker.dto.VolunteerRejoinRequestDto;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.repository.UserRepository;
 import com.example.pettracker.repository.VolunteerRepository;
+import com.example.pettracker.repository.VolunteerRejoinRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Async;
@@ -42,14 +52,17 @@ public class VolunteerService {
     );
 
     private final VolunteerRepository volunteerRepository;
+    private final VolunteerRejoinRequestRepository rejoinRequestRepository;
     private final SearchGroupRepository searchGroupRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final ImageUploadLimits imageUploadLimits;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Registers a user as a volunteer for a specific search group
      */
+    // REVIEWED
     public Volunteer joinSearchGroup(Long userId, Long searchGroupId) {
         return joinSearchGroupWithResult(userId, searchGroupId).volunteer();
     }
@@ -58,27 +71,41 @@ public class VolunteerService {
      * Registers a user as a volunteer and reports whether the membership was
      * created, reactivated, or already active.
      */
+    // REVIEWED
     public JoinSearchGroupResult joinSearchGroupWithResult(Long userId, Long searchGroupId) {
         log.info("Join search group request userId={} searchGroupId={}", userId, searchGroupId);
 
+        // Find user
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        SearchGroup searchGroup = searchGroupRepository.findById(searchGroupId)
+        // Find group
+        SearchGroup searchGroup = searchGroupRepository.findByIdForUpdate(searchGroupId)
             .orElseThrow(() -> new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Search group not found with id: " + searchGroupId));
 
         Volunteer existingVolunteer = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
-        boolean publicGroup = "PUBLIC".equalsIgnoreCase(searchGroup.getVisibility());
-        if (existingVolunteer == null && !publicGroup && !canAccessSearchGroup(user, searchGroup)) {
+        if (SearchGroup.STATUS_CLOSED.equalsIgnoreCase(searchGroup.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This search group is closed");
+        }
+
+        if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getRevoked())) {
+            return requestVolunteerRejoin(existingVolunteer, searchGroup);
+        }
+
+        boolean publicGroup = "PUBLIC".equalsIgnoreCase(searchGroup.getVisibility())
+                && !SearchGroup.STATUS_CLOSED.equalsIgnoreCase(searchGroup.getStatus());
+        if (!publicGroup && !canAccessSearchGroup(user, searchGroup)) {
             // Joining is not a public discovery mechanism. The group must
-            // already have been shared with this user by an owner/admin.
+            // already be accessible to this user. A private member who left
+            // voluntarily must be re-added by a manager. Revoked memberships
+            // use their separate creator-review flow before this access check.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
         if (existingVolunteer != null && Boolean.TRUE.equals(existingVolunteer.getActive())) {
             log.warn("User {} is already an active volunteer in search group {}", userId, searchGroupId);
-            return new JoinSearchGroupResult(existingVolunteer, true, false);
+            return new JoinSearchGroupResult(existingVolunteer, true, false, false, null, false);
         }
 
         Volunteer savedVolunteer = addVolunteerMembership(searchGroup, user);
@@ -86,18 +113,43 @@ public class VolunteerService {
         log.info("User {} joined search group {} as volunteer volunteerId={} reactivated={}",
                 userId, searchGroupId, savedVolunteer.getId(), reactivated);
 
-        // Send confirmation notification
-        sendVolunteerJoinedNotification(user, searchGroup);
+        eventPublisher.publishEvent(new VolunteerJoinedGroupEvent(userId, searchGroupId));
 
-        return new JoinSearchGroupResult(savedVolunteer, false, reactivated);
+        return new JoinSearchGroupResult(savedVolunteer, false, reactivated, false, null, false);
+    }
+
+    // REVIEWED
+    private JoinSearchGroupResult requestVolunteerRejoin(Volunteer membership, SearchGroup searchGroup) {
+        VolunteerRejoinRequest existingRequest = rejoinRequestRepository
+                .findFirstByVolunteerIdAndStatusOrderByCreatedAtDesc(membership.getId(), Status.PENDING)
+                .orElse(null);
+        if (existingRequest != null) {
+            return new JoinSearchGroupResult(
+                    membership, false, false, true, existingRequest.getId(), true);
+        }
+
+        VolunteerRejoinRequest request = rejoinRequestRepository.save(VolunteerRejoinRequest.builder()
+                .volunteer(membership)
+                .searchGroup(searchGroup)
+                .status(Status.PENDING)
+                .createdAt(Instant.now())
+                .build());
+        eventPublisher.publishEvent(new VolunteerRejoinRequestedEvent(request.getId()));
+        log.info("Created rejoin request requestId={} userId={} searchGroupId={}",
+                request.getId(), membership.getUser().getId(), searchGroup.getId());
+        return new JoinSearchGroupResult(membership, false, false, true, request.getId(), false);
     }
 
     public record JoinSearchGroupResult(
             Volunteer volunteer,
             boolean alreadyMember,
-            boolean reactivated) {
+            boolean reactivated,
+            boolean pendingApproval,
+            Long rejoinRequestId,
+            boolean requestAlreadyPending) {
     }
 
+    // REVIEWED
     public boolean canAccessSearchGroup(User user, SearchGroup searchGroup) {
         if (user == null || searchGroup == null) {
             return false;
@@ -105,7 +157,8 @@ public class VolunteerService {
         if (user.getRole() == User.Role.ADMIN) {
             return true;
         }
-        if ("PUBLIC".equalsIgnoreCase(searchGroup.getVisibility())) {
+        boolean groupClosed = SearchGroup.STATUS_CLOSED.equalsIgnoreCase(searchGroup.getStatus());
+        if (!groupClosed && "PUBLIC".equalsIgnoreCase(searchGroup.getVisibility())) {
             return true;
         }
 
@@ -127,25 +180,26 @@ public class VolunteerService {
     /**
      * Removes a volunteer from a search group
      */
+    // REVIEWED
     public void leaveSearchGroup(Long userId, Long searchGroupId) {
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
+        if (searchGroup.getCreatedBy() != null
+                && userId.equals(searchGroup.getCreatedBy().getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The group creator must remain an active member");
+        }
         Volunteer volunteer = volunteerRepository
             .findByUserIdAndSearchGroupId(userId, searchGroupId);
 
         if (volunteer == null) {
             throw new RuntimeException("Volunteer not found");
         }
+        if (!Boolean.TRUE.equals(volunteer.getActive()) || Boolean.TRUE.equals(volunteer.getRevoked())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "You are not an active member of this group");
+        }
 
         volunteer.setActive(false);
+        volunteer.setRevoked(false);
         volunteerRepository.save(volunteer);
-
-        SearchGroup searchGroup = searchGroupRepository.findById(searchGroupId).orElse(null);
-        if (searchGroup != null) {
-            User user = userRepository.findById(userId).orElse(null);
-            if (user != null) {
-                searchGroup.getVolunteers().remove(user);
-                searchGroupRepository.save(searchGroup);
-            }
-        }
 
         log.info("User {} left search group {}", userId, searchGroupId);
     }
@@ -155,6 +209,7 @@ public class VolunteerService {
      * @deprecated use the command-based overload to avoid positional arguments.
      */
     @Deprecated
+    // REVIEWED
     public SearchGroup createSearchGroupForLostPet(
             Pet lostPet,
             User petOwner,
@@ -185,6 +240,7 @@ public class VolunteerService {
                         null));
     }
 
+    // REVIEWED
     public SearchGroup createSearchGroupForLostPet(
             Pet lostPet,
             User petOwner,
@@ -195,13 +251,19 @@ public class VolunteerService {
         String groupName = command.groupName();
         String visibility = command.visibility();
         String description = command.description();
-        String status = command.status();
         String area = command.area();
         String city = command.city();
         String leaderName = command.leaderName();
         String leaderPhone = command.leaderPhone();
         Double coverageRadiusKm = command.coverageRadiusKm();
         List<Long> volunteerUserIds = command.volunteerUserIds();
+        if (groupName == null || groupName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "groupName is required");
+        }
+        groupName = groupName.trim();
+        if (groupName.length() > 255) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "groupName cannot exceed 255 characters");
+        }
         validateCoverageRadius(coverageRadiusKm);
         int groupLimit = PlanPolicy.searchGroups(petOwner);
         if (petOwner.getRole() != User.Role.ADMIN
@@ -213,10 +275,10 @@ public class VolunteerService {
         SearchGroup searchGroup = SearchGroup.builder()
             .pet(lostPet)
             .createdBy(petOwner)
-            .groupName(groupName != null ? groupName : "Search for " + lostPet.getName())
+            .groupName(groupName)
             .visibility(normalizeVisibility(visibility))
             .description(description)
-            .status(status != null ? status : "active")
+            .status(SearchGroup.STATUS_ACTIVE)
             .area(area)
             .city(city)
             .leaderName(leaderName != null ? leaderName : petOwner.getName())
@@ -228,7 +290,11 @@ public class VolunteerService {
         setImageIfPresent(searchGroup, command.image());
 
         SearchGroup savedGroup = searchGroupRepository.save(searchGroup);
+
+        // Keep the creator active as a member of the group.
         addVolunteerMembership(savedGroup, petOwner);
+
+
         if (volunteerUserIds != null) {
             volunteerUserIds.stream()
                     .filter(id -> id != null && !id.equals(petOwner.getId()))
@@ -237,27 +303,33 @@ public class VolunteerService {
                             .orElseThrow(() -> new RuntimeException("Volunteer not found with id: " + id)))
                     .forEach(user -> {
                         addVolunteerMembership(savedGroup, user);
-                        notifyAddedVolunteer(user, savedGroup);
                     });
         }
         log.info("Created search group {} for lost pet {}", savedGroup.getId(), lostPet.getId());
 
-        // Notify nearby volunteers asynchronously
-        notifyNearbyVolunteers(lostPet, savedGroup);
+        eventPublisher.publishEvent(new SearchGroupCreatedEvent(
+                savedGroup.getId(),
+                savedGroup.getGroupName(),
+                lostPet.getName(),
+                lostPet.getType(),
+                savedGroup.getArea(),
+                savedGroup.getCity()));
 
         return savedGroup;
     }
 
+    // REVIEWED
     public SearchGroup updateSearchGroup(Long searchGroupId, User actingUser, SearchGroupUpdateRequest request) {
         return updateSearchGroup(searchGroupId, actingUser, request, null);
     }
 
+    // REVIEWED
     public SearchGroup updateSearchGroup(
             Long searchGroupId,
             User actingUser,
             SearchGroupUpdateRequest request,
             MultipartFile image) {
-        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
         requireGroupManager(actingUser, searchGroup);
         validateCoverageRadius(request.coverageRadiusKm());
 
@@ -272,10 +344,15 @@ public class VolunteerService {
         }
         if (request.description() != null) searchGroup.setDescription(request.description());
         if (request.status() != null) {
-            if (request.status().isBlank()) {
-                throw new RuntimeException("status cannot be blank");
+            String requestedStatus = request.status().trim().toUpperCase(Locale.ROOT);
+            if (!SearchGroup.STATUS_ACTIVE.equals(requestedStatus)
+                    && !SearchGroup.STATUS_CLOSED.equals(requestedStatus)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be ACTIVE or CLOSED");
             }
-            searchGroup.setStatus(request.status());
+            if (!isCreator(actingUser, searchGroup)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group creator can change its status");
+            }
+            searchGroup.setStatus(requestedStatus);
         }
         if (request.area() != null) searchGroup.setArea(request.area());
         if (request.city() != null) searchGroup.setCity(request.city());
@@ -289,29 +366,57 @@ public class VolunteerService {
         return searchGroupRepository.save(searchGroup);
     }
 
+    // REVIEWED
     public Volunteer addVolunteer(Long searchGroupId, Long userId, User actingUser) {
         log.info("Add group member request actingUserId={} targetUserId={} searchGroupId={}",
                 actingUser == null ? null : actingUser.getId(), userId, searchGroupId);
 
-        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
         requireGroupManager(actingUser, searchGroup);
+        if (SearchGroup.STATUS_CLOSED.equalsIgnoreCase(searchGroup.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This search group is closed");
+        }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        Volunteer volunteer = addVolunteerMembership(searchGroup, user);
-        notifyAddedVolunteer(user, searchGroup);
+        Volunteer previousMembership = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
+        boolean wasAlreadyActive = previousMembership != null
+                && Boolean.TRUE.equals(previousMembership.getActive())
+                && !Boolean.TRUE.equals(previousMembership.getRevoked());
+        if (previousMembership != null && Boolean.TRUE.equals(previousMembership.getRevoked())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A revoked member must request to rejoin; only the group creator can decide");
+        }
+
+        // Keep an active membership unchanged; otherwise create or reactivate it and notify listeners.
+        Volunteer volunteer = wasAlreadyActive
+                ? previousMembership
+                : addVolunteerMembership(searchGroup, user);
+
+        // Notify listeners only when this call creates or reactivates a membership.
+        if (!wasAlreadyActive) {
+            eventPublisher.publishEvent(new VolunteerAddedToGroupEvent(userId, searchGroupId));
+        }
         log.info("Group member added actingUserId={} targetUserId={} searchGroupId={} volunteerId={} active={}",
                 actingUser == null ? null : actingUser.getId(), userId, searchGroupId,
                 volunteer.getId(), volunteer.getActive());
         return volunteer;
     }
 
+    // REVIEWED
     public void removeVolunteer(Long searchGroupId, Long userId, User actingUser) {
-        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
         requireGroupManager(actingUser, searchGroup);
         if (searchGroup.getCreatedBy() != null && userId.equals(searchGroup.getCreatedBy().getId())) {
             throw new RuntimeException("The group creator cannot be removed");
         }
-        leaveSearchGroup(userId, searchGroupId);
+        Volunteer membership = volunteerRepository.findByUserIdAndSearchGroupId(userId, searchGroupId);
+        if (membership == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Volunteer membership not found");
+        }
+        membership.setActive(false);
+        membership.setRevoked(true);
+        volunteerRepository.save(membership);
     }
 
     @Transactional(readOnly = true)
@@ -332,6 +437,97 @@ public class VolunteerService {
         return userRepository.searchVolunteerCandidates(searchGroupId, normalizedQuery, pageable);
     }
 
+    // REVIEWED
+    @Transactional(readOnly = true)
+    public List<VolunteerRejoinRequestDto> listPendingRejoinRequests(Long searchGroupId, User actingUser) {
+        SearchGroup searchGroup = requireSearchGroup(searchGroupId);
+        requireGroupCreator(actingUser, searchGroup);
+        return rejoinRequestRepository.findBySearchGroupIdAndStatusOrderByCreatedAtAsc(
+                        searchGroupId, Status.PENDING).stream()
+                .map(this::toRejoinRequestDto)
+                .toList();
+    }
+
+    // REVIEWED
+    public VolunteerRejoinRequestDto approveRejoinRequest(
+            Long searchGroupId,
+            Long requestId,
+            User actingUser) {
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
+        requireGroupCreator(actingUser, searchGroup);
+        if (SearchGroup.STATUS_CLOSED.equalsIgnoreCase(searchGroup.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This search group is closed");
+        }
+        VolunteerRejoinRequest request = requirePendingRejoinRequest(searchGroupId, requestId);
+        Volunteer membership = request.getVolunteer();
+        if (!Boolean.TRUE.equals(membership.getRevoked()) || Boolean.TRUE.equals(membership.getActive())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This membership is no longer awaiting rejoin approval");
+        }
+
+        membership.setActive(true);
+        membership.setRevoked(false);
+        membership.setJoinedAt(Instant.now());
+        volunteerRepository.save(membership);
+        request.setStatus(Status.APPROVED);
+        request.setResolvedAt(Instant.now());
+        request.setReviewedBy(userRepository.findById(actingUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Creator not found")));
+        VolunteerRejoinRequest savedRequest = rejoinRequestRepository.save(request);
+        eventPublisher.publishEvent(new VolunteerRejoinResolvedEvent(savedRequest.getId()));
+        return toRejoinRequestDto(savedRequest);
+    }
+
+    // REVIEWED
+    public VolunteerRejoinRequestDto rejectRejoinRequest(
+            Long searchGroupId,
+            Long requestId,
+            User actingUser) {
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
+        requireGroupCreator(actingUser, searchGroup);
+        VolunteerRejoinRequest request = requirePendingRejoinRequest(searchGroupId, requestId);
+        request.setStatus(Status.REJECTED);
+        request.setResolvedAt(Instant.now());
+        request.setReviewedBy(userRepository.findById(actingUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Creator not found")));
+        VolunteerRejoinRequest savedRequest = rejoinRequestRepository.save(request);
+        eventPublisher.publishEvent(new VolunteerRejoinResolvedEvent(savedRequest.getId()));
+        return toRejoinRequestDto(savedRequest);
+    }
+
+    // REVIEWED
+    private VolunteerRejoinRequest requirePendingRejoinRequest(Long searchGroupId, Long requestId) {
+        VolunteerRejoinRequest request = rejoinRequestRepository
+                .findByIdAndSearchGroupId(requestId, searchGroupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rejoin request not found"));
+        if (request.getStatus() != Status.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This rejoin request has already been resolved");
+        }
+        return request;
+    }
+
+    // REVIEWED
+    private void requireGroupCreator(User actingUser, SearchGroup searchGroup) {
+        if (actingUser == null || searchGroup.getCreatedBy() == null
+                || !actingUser.getId().equals(searchGroup.getCreatedBy().getId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
+        }
+    }
+
+    // REVIEWED
+    private VolunteerRejoinRequestDto toRejoinRequestDto(VolunteerRejoinRequest request) {
+        Volunteer membership = request.getVolunteer();
+        User volunteerUser = membership == null ? null : membership.getUser();
+        return new VolunteerRejoinRequestDto(
+                request.getId(),
+                request.getSearchGroup().getId(),
+                volunteerUser == null ? null : volunteerUser.getId(),
+                volunteerUser == null ? null : volunteerUser.getName(),
+                request.getStatus().name(),
+                request.getCreatedAt(),
+                request.getResolvedAt());
+    }
+
+    // REVIEWED
     private Volunteer addVolunteerMembership(SearchGroup searchGroup, User user) {
         Volunteer volunteer = volunteerRepository.findByUserIdAndSearchGroupId(user.getId(), searchGroup.getId());
         boolean reactivated = volunteer != null;
@@ -346,9 +542,8 @@ public class VolunteerService {
             volunteer.setActive(true);
             volunteer.setJoinedAt(Instant.now());
         }
+        volunteer.setRevoked(false);
         Volunteer savedVolunteer = volunteerRepository.save(volunteer);
-        searchGroup.getVolunteers().add(user);
-        searchGroupRepository.save(searchGroup);
         log.debug("Saved volunteer membership userId={} searchGroupId={} volunteerId={} reactivated={}",
                 user.getId(), searchGroup.getId(), savedVolunteer.getId(), reactivated);
         return savedVolunteer;
@@ -359,6 +554,13 @@ public class VolunteerService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found"));
     }
 
+    // REVIEWED
+    private SearchGroup requireSearchGroupForUpdate(Long searchGroupId) {
+        return searchGroupRepository.findByIdForUpdate(searchGroupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found"));
+    }
+
+    // REVIEWED
     private void requireGroupManager(User actingUser, SearchGroup searchGroup) {
         boolean admin = actingUser != null && actingUser.getRole() == User.Role.ADMIN;
         boolean creator = actingUser != null && searchGroup.getCreatedBy() != null
@@ -369,6 +571,22 @@ public class VolunteerService {
             // Hide private-group existence from users who guess an id.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
+    }
+
+    // REVIEWED
+    public SearchGroup closeSearchGroup(Long searchGroupId, User actingUser) {
+        SearchGroup searchGroup = requireSearchGroupForUpdate(searchGroupId);
+        if (!isCreator(actingUser, searchGroup)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
+        }
+        searchGroup.setStatus(SearchGroup.STATUS_CLOSED);
+        return searchGroupRepository.save(searchGroup);
+    }
+
+    // REVIEWED
+    private boolean isCreator(User user, SearchGroup searchGroup) {
+        return user != null && searchGroup.getCreatedBy() != null
+                && user.getId().equals(searchGroup.getCreatedBy().getId());
     }
 
     private void validateCoverageRadius(Double coverageRadiusKm) {
@@ -458,27 +676,24 @@ public class VolunteerService {
         }
     }
 
-    private void notifyAddedVolunteer(User volunteer, SearchGroup searchGroup) {
-        String message = "You were added to search group '" + searchGroup.getGroupName() + "'";
-        if (volunteer.getPhone() != null && !volunteer.getPhone().isBlank()) {
-            notificationService.sendPhoneNotification(volunteer.getPhone(), message);
-        }
-        if (volunteer.getEmail() != null && !volunteer.getEmail().isBlank()) {
-            notificationService.sendEmail(volunteer.getEmail(), "Pet search group", message);
-        }
-    }
-
     /**
      * Notifies all active volunteers in a search group about pet status updates
      */
+    // REVIEWED
     @Async("notificationExecutor")
     public void notifyVolunteersInGroup(SearchGroup searchGroup, String updateMessage) {
-        if (searchGroup == null || searchGroup.getVolunteers().isEmpty()) {
+        if (searchGroup == null) {
+            return;
+        }
+        List<Volunteer> activeVolunteers = volunteerRepository
+                .findBySearchGroupIdAndActiveTrueOrderByJoinedAtAsc(searchGroup.getId());
+        if (activeVolunteers.isEmpty()) {
             log.debug("No volunteers to notify for search group {}", searchGroup != null ? searchGroup.getId() : "null");
             return;
         }
 
-        for (User volunteer : searchGroup.getVolunteers()) {
+        for (Volunteer membership : activeVolunteers) {
+            User volunteer = membership.getUser();
             if (volunteer.getPhone() != null && !volunteer.getPhone().isBlank()) {
                 notificationService.sendPhoneNotification(volunteer.getPhone(), updateMessage);
             }
@@ -488,113 +703,7 @@ public class VolunteerService {
             }
         }
 
-        log.info("Notified {} volunteers in search group {}", searchGroup.getVolunteers().size(), searchGroup.getId());
-    }
-
-    /**
-     * Notifies nearby volunteers about a newly lost pet
-     */
-    @Async("notificationExecutor")
-    public void notifyNearbyVolunteers(Pet lostPet, SearchGroup searchGroup) {
-        if (lostPet == null || lostPet.getOwner() == null) {
-            log.warn("Invalid pet or owner for volunteer notification");
-            return;
-        }
-
-        // Get all active volunteers (in production, you'd filter by location)
-        List<Volunteer> activeVolunteers = volunteerRepository.findByActiveTrueAndSearchGroupId(searchGroup.getId());
-
-        String petName = lostPet.getName() != null ? lostPet.getName() : "a pet";
-        String petType = lostPet.getType() != null ? lostPet.getType() : "animal";
-
-        String message = String.format(
-            "A %s named '%s' has been reported lost nearby! " +
-            "Click the app to join the search group and help reunite it with its owner.",
-            petType, petName
-        );
-
-        String emailSubject = "Help Needed: Lost " + petType + " Named '" + petName + "'";
-
-        String emailBody = String.format(
-            "Dear Volunteer,\n\n" +
-            "A %s named '%s' has been reported as LOST in your area!\n\n" +
-            "Pet Information:\n" +
-            "- Name: %s\n" +
-            "- Type: %s\n" +
-            "- Owner: %s\n" +
-            "- Owner Contact: %s\n\n" +
-            "We need your help! If you'd like to join the search:\n" +
-            "1. Open the PetTracker app\n" +
-            "2. Find the search group for '%s'\n" +
-            "3. Click 'Join Search Group'\n" +
-            "4. Start searching and share any sightings\n\n" +
-            "Every second counts. Thank you for helping!\n\n" +
-            "Best regards,\n" +
-            "PetTracker Team",
-            petType, petName, petName, petType, lostPet.getOwner().getName(),
-            lostPet.getOwner().getEmail(), petName
-        );
-
-        // Send notifications to all active volunteers
-        for (Volunteer volunteer : activeVolunteers) {
-            User volunteerUser = volunteer.getUser();
-            if (volunteerUser == null) continue;
-
-            try {
-                if (volunteerUser.getPhone() != null && !volunteerUser.getPhone().isBlank()) {
-                    notificationService.sendPhoneNotification(volunteerUser.getPhone(), message);
-                }
-                if (volunteerUser.getEmail() != null && !volunteerUser.getEmail().isBlank()) {
-                    notificationService.sendEmail(volunteerUser.getEmail(), emailSubject, emailBody);
-                }
-                log.info("Notified volunteer {} about lost pet {}", volunteerUser.getId(), lostPet.getId());
-            } catch (Exception e) {
-                log.error("Failed to notify volunteer {} about lost pet {}", volunteerUser.getId(), lostPet.getId(), e);
-            }
-        }
-
-        log.info("Notified {} volunteers about lost pet {}", activeVolunteers.size(), lostPet.getId());
-    }
-
-    /**
-     * Sends notification when a volunteer joins a search group
-     */
-    @Async("notificationExecutor")
-    private void sendVolunteerJoinedNotification(User volunteer, SearchGroup searchGroup) {
-        if (searchGroup.getPet() == null || searchGroup.getPet().getOwner() == null) {
-            return;
-        }
-
-        User petOwner = searchGroup.getPet().getOwner();
-        String volunteerName = volunteer.getName() != null ? volunteer.getName() : "A volunteer";
-        String petName = searchGroup.getPet().getName() != null ? searchGroup.getPet().getName() : "your pet";
-
-        String message = String.format(
-            "%s has joined the search group for %s! Thank you for the help.",
-            volunteerName, petName
-        );
-
-        String emailBody = String.format(
-            "Dear %s,\n\n" +
-            "Good news! %s has joined the search group for '%s'.\n\n" +
-            "Volunteer Information:\n" +
-            "- Name: %s\n" +
-            "- Email: %s\n\n" +
-            "You can now coordinate search efforts with them through the app.\n\n" +
-            "Every helper brings your pet closer to home!\n\n" +
-            "Best regards,\n" +
-            "PetTracker Team",
-            petOwner.getName(), volunteerName, petName, volunteer.getName(), volunteer.getEmail()
-        );
-
-        if (petOwner.getPhone() != null && !petOwner.getPhone().isBlank()) {
-            notificationService.sendPhoneNotification(petOwner.getPhone(), message);
-        }
-        if (petOwner.getEmail() != null && !petOwner.getEmail().isBlank()) {
-            notificationService.sendEmail(petOwner.getEmail(), "New Volunteer Joined the Search", emailBody);
-        }
-
-        log.info("Notified pet owner about volunteer {} joining search group", volunteer.getId());
+        log.info("Notified {} volunteers in search group {}", activeVolunteers.size(), searchGroup.getId());
     }
 
     /**

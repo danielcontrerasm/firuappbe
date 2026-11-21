@@ -10,6 +10,9 @@ spring:
       mail:
         smtp:
           auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          connectiontimeout: ${SPRING_MAIL_SMTP_CONNECTION_TIMEOUT:10000}
+          timeout: ${SPRING_MAIL_SMTP_TIMEOUT:10000}
+          writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT:10000}
           starttls:
             enable: ${SPRING_MAIL_SMTP_STARTTLS_ENABLE:true}
   sql:
@@ -90,6 +93,7 @@ notifications:
     from: ${NOTIFICATIONS_EMAIL_FROM:}
 
 app:
+  verification-base-url: ${APP_VERIFICATION_BASE_URL:http://localhost:8080}
   cache:
     user-by-email:
       maximum-size: ${USER_BY_EMAIL_CACHE_MAXIMUM_SIZE:5000}

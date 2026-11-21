@@ -1,6 +1,6 @@
 # FiruApp Backend Study Guide
 
-This guide uses FiruApp/PetTracker examples from this repository. When the repo does not contain a topic directly, the examples are built in the same style as the existing code.
+This guide uses FiruApp/PetTracker examples from this repository. Some sections are conceptual exercises and may not map to a current entity or method; check the referenced source before treating an example as production code. Transit is a separate Spring Boot project in `../../transit`.
 
 ## How To Use This Guide
 
@@ -12,7 +12,7 @@ Study one section at a time:
 4. Review the answer key.
 5. Open the referenced files and explain the code out loud.
 
-Useful files in this project:
+Useful files in this project (Transit lives in its sibling project):
 
 - `src/main/java/com/example/pettracker/controller/PetController.java`
 - `src/main/java/com/example/pettracker/service/LocationService.java`
@@ -1143,11 +1143,11 @@ Output:
 
 FiruApp-style `flatMap` example:
 
-Search groups can have many volunteers. If you have many groups and want one list of all volunteers:
+In the current FiruApp model, membership rows live in `VolunteerRepository`; `SearchGroup` does not expose a `getVolunteers()` collection. Given a map of each group ID to its memberships, flatten the values like this:
 
 ```java
 List<Volunteer> volunteers = groups.stream()
-        .flatMap(group -> group.getVolunteers().stream())
+        .flatMap(group -> membershipsByGroup.getOrDefault(group.getId(), List.of()).stream())
         .toList();
 ```
 
@@ -1168,13 +1168,13 @@ Output shape:
 
 Actual project pattern:
 
-`TransitGeofencingService` uses `flatMap` to move from groups to volunteers and then to users.
+Transit geofencing belongs to the sibling Transit service. In FiruApp, inspect `VolunteerRepository` queries for the current group-to-membership lookup pattern.
 
 Find the error:
 
 ```java
 List<List<Volunteer>> volunteers = groups.stream()
-        .map(group -> group.getVolunteers())
+        .map(group -> membershipsByGroup.getOrDefault(group.getId(), List.of()))
         .toList();
 ```
 
@@ -1192,7 +1192,7 @@ Convert this to use `flatMap`:
 
 ```java
 List<List<Long>> idsByGroup = groups.stream()
-        .map(group -> group.getVolunteers().stream()
+        .map(group -> membershipsByGroup.getOrDefault(group.getId(), List.of()).stream()
                 .map(Volunteer::getId)
                 .toList())
         .toList();
@@ -1202,7 +1202,7 @@ Answer:
 
 ```java
 List<Long> ids = groups.stream()
-        .flatMap(group -> group.getVolunteers().stream())
+        .flatMap(group -> membershipsByGroup.getOrDefault(group.getId(), List.of()).stream())
         .map(Volunteer::getId)
         .toList();
 ```
@@ -3817,14 +3817,14 @@ ABCD:
     - C. It guarantees each position has a different timestamp.
     - D. It converts positions to JSON automatically.
 
-18. In `Set<User> volunteers = searchGroup.getVolunteers();`, what should the code do before streaming if the set might be null?
+18. Why does current FiruApp load group membership through `VolunteerRepository` instead of `searchGroup.getVolunteers()`?
     - A. Check for null and use an empty collection when missing.
     - B. Convert it to a `String`.
     - C. Save it to the database.
     - D. Change it to `Map.of()`.
 
-19. In `volunteers.stream().map(SearchGroupMapper::toVolunteerMemberDto).toList()`, why use `map`?
-    - A. To transform each `User` into a `VolunteerMemberDto`.
+19. In `volunteers.stream().map(Volunteer::getUser).toList()`, why use `map`?
+    - A. To transform each membership into its associated user.
     - B. To flatten nested lists.
     - C. To create a thread-safe cache.
     - D. To delete duplicate volunteers from the database.
@@ -4690,14 +4690,14 @@ curl "http://localhost:8080/api/pets/1/walk-distance/week?weekStart=2026-10-05" 
     - C. It guarantees each position has a different timestamp.
     - D. It converts positions to JSON automatically.
 
-18. In `Set<User> volunteers = searchGroup.getVolunteers();`, what should the code do before streaming if the set might be null?
-    - A. Check for null and use `List.of()` when missing.
+18. Why does current FiruApp load group membership through `VolunteerRepository` instead of `searchGroup.getVolunteers()`?
+    - A. It keeps `Volunteer` as the single source of truth for group membership, including active and revoked status.
     - B. Convert it to a `String`.
     - C. Save it to the database.
     - D. Change it to `Map.of()`.
 
-19. In `volunteers.stream().map(SearchGroupMapper::toVolunteerMemberDto).toList()`, why use `map`?
-    - A. To transform each `User` into a `VolunteerMemberDto`.
+19. In `volunteers.stream().map(Volunteer::getUser).toList()`, why use `map`?
+    - A. To transform each membership into its associated user.
     - B. To flatten nested lists.
     - C. To create a thread-safe cache.
     - D. To delete duplicate volunteers from the database.

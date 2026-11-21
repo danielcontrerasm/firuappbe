@@ -7,6 +7,7 @@ import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.JoinSearchGroupResponse;
 import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.dto.VolunteerDto;
+import com.example.pettracker.dto.VolunteerRejoinRequestDto;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
@@ -50,24 +51,29 @@ public class SearchGroupController {
     private final CurrentUserService currentUserService;
     private final PetService petService;
     private final SearchGroupRepository searchGroupRepository;
+    private final SearchGroupMapper searchGroupMapper;
 
     public SearchGroupController(
             VolunteerService volunteerService,
             CurrentUserService currentUserService,
             PetService petService,
-            SearchGroupRepository searchGroupRepository) {
+            SearchGroupRepository searchGroupRepository,
+            SearchGroupMapper searchGroupMapper) {
         this.volunteerService = volunteerService;
         this.currentUserService = currentUserService;
         this.petService = petService;
         this.searchGroupRepository = searchGroupRepository;
+        this.searchGroupMapper = searchGroupMapper;
     }
 
+    // REVIEWED
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
     public ResponseEntity<SearchGroupDto> create(@RequestBody SearchGroupCreateRequest request, Authentication authentication) {
         return createSearchGroup(request, null, authentication);
     }
 
+    // REVIEWED
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
     public ResponseEntity<SearchGroupDto> createWithImage(
@@ -77,6 +83,7 @@ public class SearchGroupController {
         return createSearchGroup(request, image, authentication);
     }
 
+    // REVIEWED
     private ResponseEntity<SearchGroupDto> createSearchGroup(
             SearchGroupCreateRequest request,
             MultipartFile image,
@@ -111,10 +118,11 @@ public class SearchGroupController {
                                 image));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(user.getRole() == User.Role.ADMIN
-                        ? SearchGroupMapper.toDto(saved)
-                        : SearchGroupMapper.toPublicDto(saved));
+                        ? searchGroupMapper.toDto(saved, true, isCreator(user, saved))
+                        : searchGroupMapper.toPublicDto(saved, isCreator(user, saved)));
     }
 
+    // REVIEWED
     @PutMapping(path = "/{searchGroupId}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
     public SearchGroupDto update(
@@ -124,10 +132,11 @@ public class SearchGroupController {
         User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request);
         return user.getRole() == User.Role.ADMIN
-                ? SearchGroupMapper.toDto(updated)
-                : SearchGroupMapper.toPublicDto(updated);
+                ? searchGroupMapper.toDto(updated, true, isCreator(user, updated))
+                : searchGroupMapper.toPublicDto(updated, isCreator(user, updated));
     }
 
+    // REVIEWED
     @PutMapping(path = "/{searchGroupId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Transactional
     public SearchGroupDto updateWithImage(
@@ -138,8 +147,21 @@ public class SearchGroupController {
         User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request, image);
         return user.getRole() == User.Role.ADMIN
-                ? SearchGroupMapper.toDto(updated)
-                : SearchGroupMapper.toPublicDto(updated);
+                ? searchGroupMapper.toDto(updated, true, isCreator(user, updated))
+                : searchGroupMapper.toPublicDto(updated, isCreator(user, updated));
+    }
+
+    // REVIEWED
+    @PostMapping("/{searchGroupId}/close")
+    @Transactional
+    public SearchGroupDto close(
+            @PathVariable Long searchGroupId,
+            Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        SearchGroup closed = volunteerService.closeSearchGroup(searchGroupId, user);
+        return user.getRole() == User.Role.ADMIN
+                ? searchGroupMapper.toDto(closed, true, isCreator(user, closed))
+                : searchGroupMapper.toPublicDto(closed, isCreator(user, closed));
     }
 
     @GetMapping("/{searchGroupId}")
@@ -159,8 +181,8 @@ public class SearchGroupController {
         }
 
         SearchGroupDto result = user.getRole() == User.Role.ADMIN
-                ? SearchGroupMapper.toDto(group)
-                : SearchGroupMapper.toPublicDto(group);
+                ? searchGroupMapper.toDto(group, true, isCreator(user, group))
+                : searchGroupMapper.toPublicDto(group, isCreator(user, group));
         return ResponseEntity.ok(result);
     }
 
@@ -196,12 +218,12 @@ public class SearchGroupController {
         User user = currentUserService.require(authentication);
         if (user.getRole() == User.Role.ADMIN) {
             return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
-                    .map(SearchGroupMapper::toDto)
+                    .map(group -> searchGroupMapper.toDto(group, true, isCreator(user, group)))
                     .toList();
         }
         return searchGroupRepository.findDiscoverableForUser(
                         user.getId(), pageRequest(page, size)).stream()
-                .map(SearchGroupMapper::toPublicDto)
+                .map(group -> searchGroupMapper.toPublicDto(group, isCreator(user, group)))
                 .toList();
     }
 
@@ -221,15 +243,18 @@ public class SearchGroupController {
         if (user.getRole() == User.Role.ADMIN || owner) {
             boolean fullDetails = user.getRole() == User.Role.ADMIN;
             return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
-                    .map(fullDetails ? SearchGroupMapper::toDto : SearchGroupMapper::toPublicDto)
+                    .map(group -> fullDetails
+                            ? searchGroupMapper.toDto(group, true, isCreator(user, group))
+                            : searchGroupMapper.toPublicDto(group, isCreator(user, group)))
                     .toList();
         }
         return searchGroupRepository.findByPetIdAndActiveVolunteerUserId(
                         petId, user.getId(), pageRequest(page, size)).stream()
-                .map(SearchGroupMapper::toPublicDto)
+                .map(group -> searchGroupMapper.toPublicDto(group, isCreator(user, group)))
                 .toList();
     }
 
+    // REVIEWED
     @PostMapping("/{searchGroupId}/join")
     public ResponseEntity<JoinSearchGroupResponse> join(
             @PathVariable Long searchGroupId,
@@ -237,30 +262,71 @@ public class SearchGroupController {
         User user = currentUserService.require(authentication);
         VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(
                 user.getId(), searchGroupId);
-        String message = result.alreadyMember()
-                ? "Ya perteneces a este grupo de búsqueda."
-                : result.reactivated()
-                        ? "Te has unido nuevamente al grupo de búsqueda."
-                        : "Te has unido al grupo de búsqueda correctamente.";
+        String message = result.pendingApproval()
+                ? result.requestAlreadyPending()
+                        ? "Tu solicitud de reingreso ya está pendiente de revisión."
+                        : "Tu solicitud de reingreso fue enviada al creador del grupo."
+                : result.alreadyMember()
+                        ? "Ya perteneces a este grupo de búsqueda."
+                        : result.reactivated()
+                                ? "Te has unido nuevamente al grupo de búsqueda."
+                                : "Te has unido al grupo de búsqueda correctamente.";
         JoinSearchGroupResponse response = new JoinSearchGroupResponse(
-                SearchGroupMapper.toDto(result.volunteer()),
+                searchGroupMapper.toDto(result.volunteer()),
                 message,
                 result.alreadyMember(),
-                result.reactivated());
-        return ResponseEntity.status(result.alreadyMember() ? HttpStatus.OK : HttpStatus.CREATED)
+                result.reactivated(),
+                result.pendingApproval(),
+                result.rejoinRequestId(),
+                result.requestAlreadyPending());
+        HttpStatus status = result.pendingApproval()
+                ? HttpStatus.ACCEPTED
+                : result.alreadyMember() ? HttpStatus.OK : HttpStatus.CREATED;
+        return ResponseEntity.status(status)
                 .body(response);
     }
 
+    // REVIEWED
     @PostMapping("/{searchGroupId}/volunteers/{userId}")
     public ResponseEntity<VolunteerDto> addVolunteer(
             @PathVariable Long searchGroupId,
             @PathVariable Long userId,
             Authentication authentication) {
-        VolunteerDto volunteer = SearchGroupMapper.toDto(
+        VolunteerDto volunteer = searchGroupMapper.toDto(
                 volunteerService.addVolunteer(searchGroupId, userId, currentUserService.require(authentication)));
         return ResponseEntity.status(HttpStatus.CREATED).body(volunteer);
     }
 
+    // REVIEWED
+    @GetMapping("/{searchGroupId}/rejoin-requests")
+    public List<VolunteerRejoinRequestDto> pendingRejoinRequests(
+            @PathVariable Long searchGroupId,
+            Authentication authentication) {
+        return volunteerService.listPendingRejoinRequests(
+                searchGroupId, currentUserService.require(authentication));
+    }
+
+    // REVIEWED
+    @PostMapping("/{searchGroupId}/rejoin-requests/{requestId}/approve")
+    public VolunteerRejoinRequestDto approveRejoinRequest(
+            @PathVariable Long searchGroupId,
+            @PathVariable Long requestId,
+            Authentication authentication) {
+        return volunteerService.approveRejoinRequest(
+                searchGroupId, requestId, currentUserService.require(authentication));
+    }
+
+    // REVIEWED
+    @PostMapping("/{searchGroupId}/rejoin-requests/{requestId}/reject")
+    public VolunteerRejoinRequestDto rejectRejoinRequest(
+            @PathVariable Long searchGroupId,
+            @PathVariable Long requestId,
+            Authentication authentication) {
+        return volunteerService.rejectRejoinRequest(
+                searchGroupId, requestId, currentUserService.require(authentication));
+    }
+
+    // REVIEWED
     @DeleteMapping("/{searchGroupId}/volunteers/{userId}")
     public ResponseEntity<Void> removeVolunteer(
             @PathVariable Long searchGroupId,
@@ -288,6 +354,7 @@ public class SearchGroupController {
                 candidatePageRequest(page, size));
     }
 
+    // REVIEWED
     @PostMapping("/{searchGroupId}/leave")
     public ResponseEntity<Void> leave(@PathVariable Long searchGroupId, Authentication authentication) {
         User user = currentUserService.require(authentication);
@@ -315,7 +382,7 @@ public class SearchGroupController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group owner or an admin can view members");
         }
         return volunteerService.getActiveVolunteersForGroup(searchGroupId, pageRequest(page, size)).stream()
-                .map(SearchGroupMapper::toDto)
+                .map(searchGroupMapper::toDto)
                 .toList();
     }
 
@@ -327,10 +394,15 @@ public class SearchGroupController {
             Authentication authentication) {
         User user = currentUserService.require(authentication);
         return volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)).stream()
-                .map(user.getRole() == User.Role.ADMIN
-                        ? SearchGroupMapper::toDto
-                        : SearchGroupMapper::toPublicDto)
+                .map(group -> user.getRole() == User.Role.ADMIN
+                        ? searchGroupMapper.toDto(group, true, isCreator(user, group))
+                        : searchGroupMapper.toPublicDto(group, isCreator(user, group)))
                 .toList();
+    }
+
+    private boolean isCreator(User user, SearchGroup group) {
+        return user != null && group.getCreatedBy() != null
+                && user.getId().equals(group.getCreatedBy().getId());
     }
 
     private Pageable pageRequest(int page, int size) {

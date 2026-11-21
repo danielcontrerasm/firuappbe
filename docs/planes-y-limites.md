@@ -19,4 +19,4 @@ Esta tabla describe la oferta comercial documentada. El [catálogo de requisitos
 | Sesión personal de configuración | — | — | Una sesión de 15 minutos |
 | Garantía del equipo | 1 año | 1 año | 1 año |
 
-Los nombres de producto del código son `BASIC`, `FAMILY` y `PREMIUM`. Los grupos de búsqueda se limitan por cuenta; las personas autorizadas y las zonas seguras se limitan por mascota. Los administradores no están sujetos a estos límites.
+Los nombres de producto del código son `BASIC`, `FAMILY` y `PREMIUM`. El código limita los grupos creados por cuenta (1/3/5); cerrar un grupo no libera cupo, porque el conteo incluye todos los estados. Las personas autorizadas y las zonas seguras se limitan por mascota. En el código, PREMIUM y ADMIN no tienen límite de personas autorizadas, aunque la oferta comercial indica “20 o más”; confirmar el valor comercial final. Los administradores no están sujetos a los demás límites.

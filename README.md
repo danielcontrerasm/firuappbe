@@ -1,6 +1,6 @@
 # FiruApp
 
-FiruApp is a pet-care platform that combines GPS pet tracking, geofencing, lost-pet coordination, and a dog-walking marketplace. This repository contains the Spring Boot backend, a browser dashboard served by the backend, the GPS device listener, notification integrations, and the transit-tracking module.
+FiruApp is a pet-care platform that combines GPS pet tracking, geofencing, lost-pet coordination, and a dog-walking marketplace. This repository contains the FiruApp Spring Boot backend, its browser dashboard, GPS device listener, notification integrations, and pet-care features. Transit tracking was extracted into the sibling [`transit`](../transit/README.md) Spring Boot project.
 
 The project is still evolving. This README documents the functionality that exists in the codebase today and identifies the pieces that are planned but not implemented.
 
@@ -34,7 +34,7 @@ Spring Kafka is included as an optional/scaffolded ingestion path, but the defau
 | Lost-pet community | Search groups, volunteer membership, lost-pet wall, redacted public group details | Owners, volunteers, admins |
 | Walker marketplace | Public walker wall, applications, approval, request, quote, decision, chat, active walk, GPS positions, completion | Owners, walkers, admins |
 | Notifications | In-app WebSocket alerts, email, SMS, optional WhatsApp | Owners, volunteers |
-| Transit tracking | Vehicles, locations, routes, reports, scheduled geofences, transit search groups and volunteers | Admins |
+| Transit tracking | Separate Spring Boot project in `../transit`; see its README for current scope and setup | Not served by this application |
 | Operations | HTTP, database, Hikari pool, and GPS ingestion metrics | Admins |
 
 ### Current FiruApp dashboard
@@ -52,7 +52,7 @@ The backend serves a responsive Spanish-language dashboard from `src/main/resour
 - Admin panel with walker management and operational metrics.
 - Automatic inbox/map/alert refresh while a session is active.
 
-The static dashboard currently focuses on the marketplace workflow. The complete tracking, geofence, lost-pet, and transit capabilities are exposed by the REST API and can also be consumed by a separate React client. A companion React frontend uses the marketplace APIs from its `/walks` route.
+The static dashboard currently focuses on the marketplace workflow. Pet tracking, geofencing, and lost-pet capabilities are exposed by this application’s REST API and can also be consumed by a separate React client. Transit APIs belong to the sibling `../transit` service. A companion React frontend uses the marketplace APIs from its `/walks` route.
 
 ## Demo accounts
 
@@ -143,12 +143,9 @@ flowchart LR
 | Module/package | Responsibility |
 | --- | --- |
 | `controller` | Authentication, pets, alerts, geofences, lost-pet groups, walker marketplace, admin metrics |
-| `transit/controller` | Transit vehicle, geofence, and search-group APIs |
 | `service` | Domain rules, access checks, location persistence, notifications, marketplace workflow, caching, demo data |
 | `repository` | JPA persistence for core pet, community, and marketplace entities |
-| `transit/repository` | JPA persistence for transit entities |
 | `entity` | Users, pets, locations, geofences, alerts, search groups, walkers, requests, messages, and walks |
-| `transit/entity` | Vehicles, transit locations, scheduled geofences, incidents, groups, and volunteers |
 | `gps` | TCP server, protocol detection, ingestion, JT/T 808/V41/Topin support, device replies |
 | `security` | JWT generation, bearer-token filtering, BCrypt, role rules |
 | `config` | WebSocket, CORS, caches, geospatial support, async executors, Railway validation |
@@ -158,7 +155,7 @@ flowchart LR
 
 ### Authentication and authorization
 
-1. `POST /api/auth/register` creates a `USER` account with a BCrypt password hash.
+1. `POST /api/auth/register` creates an unverified `USER` account with a BCrypt password hash and attempts to send a 24-hour email confirmation link. Its response includes `emailSent` and a clear message; if SMTP fails, the account remains created and the user can request a replacement with `POST /api/auth/resend-verification`. `GET /api/auth/verify-email?token=...` confirms the address; login is unavailable until confirmation.
 2. `POST /api/auth/login` validates the credentials and returns a JWT.
 3. The browser stores the token and sends it as `Authorization: Bearer <token>`.
 4. `JwtAuthFilter` restores the authenticated principal for each protected request.
@@ -168,7 +165,7 @@ Roles:
 
 - `USER`: pet owner, tracker, geofence, lost-pet, and marketplace consumer capabilities.
 - `WALKER`: receive and answer walk requests, chat, start walks, send positions, and complete walks.
-- `ADMIN`: walker administration, metrics, full owner scope, and transit administration.
+- `ADMIN`: walker administration, metrics, and full owner scope. Transit is a separate service and does not inherit FiruApp authentication.
 
 ### Pet location flow
 
@@ -231,9 +228,9 @@ sequenceDiagram
 
 The request includes the pet, requested start time, duration, service address, notes, owner budget, and walker quote. Owners and walkers can chat inside a request. Walk positions are rendered as a Leaflet polyline, and the walker can submit browser geolocation while the walk is `IN_PROGRESS`.
 
-### Transit flow
+### Transit service boundary
 
-The transit module is a separate domain inside the same service. Admin-only APIs manage vehicles, their locations, recent routes, time-window reports, scheduled geofences, incident/search groups, and volunteer membership. Transit geofence processing uses its own async executor.
+Transit tracking runs as a separate Spring Boot application in `../transit`, at the same project level. It has its own port (8081 by default), persistence model, and deployment configuration. Its README notes that FiruApp authentication has not been carried over and notification calls are currently logged; do not assume the former `/api/transit/**` routes are served or protected by this application.
 
 ## Data model
 
@@ -254,10 +251,6 @@ erDiagram
     WALK_REQUEST ||--o| DOG_WALK : starts
     DOG_WALK ||--o{ DOG_WALK_POSITION : records
     SEARCH_GROUP ||--o{ VOLUNTEER : includes
-    TRANSIT_VEHICLE ||--o{ TRANSIT_LOCATION : records
-    TRANSIT_VEHICLE ||--o{ TRANSIT_SCHEDULED_GEOFENCE : configures
-    TRANSIT_VEHICLE ||--o{ TRANSIT_SEARCH_GROUP : concerns
-    TRANSIT_SEARCH_GROUP ||--o{ TRANSIT_VOLUNTEER : includes
 ```
 
 Core tables/entities:
@@ -270,9 +263,9 @@ Core tables/entities:
 - `search_group` and `volunteer`: lost-pet coordination.
 - `dog_walker_profiles`: walker marketplace profile and approval state.
 - `walk_requests`, `walk_messages`, `dog_walk`, and `dog_walk_positions`: negotiation and walk execution.
-- `transit_*`: vehicle tracking and transit incident coordination.
+- Transit tables are owned by the separate `../transit` project and are not part of this application schema.
 
-PostGIS is used for polygon geofences and spatial operations. The schema includes indexes for owner access, tracker lookup, time-ordered routes, alerts, marketplace requests/messages, walk positions, and transit locations.
+PostGIS is used for polygon geofences and spatial operations. This schema includes indexes for owner access, tracker lookup, time-ordered routes, alerts, marketplace requests/messages, and walk positions. Transit maintains its own database schema.
 
 ## API surface
 
@@ -282,7 +275,9 @@ All routes below are relative to the application origin. Protected routes requir
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/auth/register` | Register an owner account |
+| `POST` | `/api/auth/register` | Register an owner account and send confirmation email |
+| `GET` | `/api/auth/verify-email?token=...` | Verify the registration email using the one-time link |
+| `POST` | `/api/auth/resend-verification` | Request another verification email (`{"email":"..."}`) |
 | `POST` | `/api/auth/login` | Authenticate and receive a JWT |
 | `GET` | `/api/public/walkers` | List active approved walkers |
 | `POST` | `/api/walker-applications` | Submit a public walker application |
@@ -345,11 +340,15 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `GET` | `/api/search-groups/my` | List groups for the current user |
 | `GET` | `/api/search-groups/pet/{petId}` | List groups for a pet |
 | `PUT` | `/api/search-groups/{id}` | Update a group |
+| `POST` | `/api/search-groups/{id}/close` | Close a group (creator only); history remains accessible to members |
 | `PUT` | `/api/search-groups/{id}` (`multipart/form-data`) | Update a group with an optional image |
 | `GET` | `/api/search-groups/{id}/image` | Read the group image |
 | `GET` | `/api/search-groups/{id}/messages` | List the group's internal chat messages |
 | `POST` | `/api/search-groups/{id}/messages` | Send an internal chat message |
 | `POST` | `/api/search-groups/{id}/join` | Join as a volunteer |
+| `GET` | `/api/search-groups/{id}/rejoin-requests` | List pending rejoin requests (creator only) |
+| `POST` | `/api/search-groups/{id}/rejoin-requests/{requestId}/approve` | Approve a rejoin request (creator only) |
+| `POST` | `/api/search-groups/{id}/rejoin-requests/{requestId}/reject` | Reject a rejoin request (creator only) |
 | `POST` | `/api/search-groups/{id}/leave` | Leave a group |
 | `GET` | `/api/search-groups/{id}/volunteers` | List group volunteers |
 | `GET` | `/api/search-groups/{id}/member-candidates` | Find candidate members |
@@ -363,18 +362,37 @@ groups return `404`. Chat has its own membership checks. Discovery lists have
 some differences from detail authorization; see B12 in the
 [requirements catalogue](docs/catalogo-requisitos.md#brechas-identificadas-en-la-revisión).
 
-Known gap: an existing inactive volunteer can currently reactivate a private
-membership through `join`, including after removal. The reentry policy remains
-pending under D01/RF-GRU-005 in the catalogue; active-membership checks elsewhere
-do not prevent this bypass.
+Membership reentry follows the group's visibility. A user may reactivate an
+inactive membership through `join` while the group is public and active. For a
+private group, an inactive member must be re-added by the pet owner, creator, or
+an administrator. A member removed by a group manager is marked as revoked.
+Trying to rejoin creates one pending request and notifies the group creator;
+only that creator can approve or reject it, regardless of group visibility.
+Repeated attempts reuse the existing pending request. Unknown users cannot join
+private groups by guessing an ID. The optional WhatsApp invitation remains
+external: joining WhatsApp does not change FiruApp membership. The request flow
+starts when the member uses FiruApp's join endpoint or button.
+The creator remains an active member and cannot leave or be removed. Membership
+changes are serialized by group, and the database enforces one membership row
+per user and group. Existing duplicate rows are consolidated during schema
+initialization, preferring an active row and then the most recent join. Existing
+inactive memberships are treated as revoked during the first schema upgrade so
+previous removals cannot bypass the creator's rejoin-request decision.
+
+Groups are created with `ACTIVE` status. Only the creator can close or reopen
+one through `POST /api/search-groups/{id}/close` or by updating its status to
+`ACTIVE`. Closed groups are removed from discovery and reject new memberships
+and messages. Authorized existing members can still read the message history.
 
 `POST /api/search-groups/{id}/join` does not require a request body. A new or
 reactivated membership returns `201 Created`; repeating the request for an
-already active member returns `200 OK`. Both responses contain `volunteer`,
-`message`, `alreadyMember`, and `reactivated`.
+already active member returns `200 OK`; a revoked member's rejoin request
+returns `202 Accepted` with `pendingApproval` and `rejoinRequestId`. The creator
+reviews pending requests through the routes above. The requester receives an
+email or SMS after the creator approves or rejects the request.
 
 Group chat messages use JSON such as `{ "body": "I am searching the north side." }`.
-Only active volunteers, the pet/group owner, and administrators can read or send messages.
+While a group is active, only active volunteers, the pet/group owner, and administrators can read or send messages. After closure, authorized users can still read history, but no one can add messages.
 
 ### Walker marketplace and dog walks
 
@@ -404,24 +422,9 @@ Only active volunteers, the pet/group owner, and administrators can read or send
 | `DELETE` | `/api/admin/walkers/{id}` | Delete a walker profile |
 | `GET` | `/api/admin/metrics` | Read HTTP, DB, pool, and GPS metrics |
 
-### Transit administration
+### Transit service
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET`/`POST` | `/api/transit/vehicles` | List or create vehicles |
-| `GET` | `/api/transit/vehicles/{id}` | Read a vehicle |
-| `POST` | `/api/transit/vehicles/{id}/locations` | Add a vehicle location |
-| `GET` | `/api/transit/vehicles/{id}/locations/latest` | Latest vehicle location |
-| `GET` | `/api/transit/vehicles/{id}/route` | Recent vehicle route |
-| `GET` | `/api/transit/vehicles/{id}/report` | Time-window vehicle report |
-| `POST` | `/api/transit/geofences/vehicle/{vehicleId}` | Create a scheduled vehicle geofence |
-| `GET` | `/api/transit/geofences/vehicle/{vehicleId}` | List vehicle geofences |
-| `DELETE` | `/api/transit/geofences/{geofenceId}` | Delete a vehicle geofence |
-| `POST` | `/api/transit/search-groups` | Create a transit search group |
-| `GET` | `/api/transit/search-groups/vehicle/{vehicleId}` | List vehicle groups |
-| `GET` | `/api/transit/search-groups/my` | Current user's transit groups |
-| `POST` | `/api/transit/search-groups/{id}/join` | Join a transit group |
-| `POST` | `/api/transit/search-groups/{id}/leave` | Leave a transit group |
+Transit endpoints are documented and maintained in the sibling [Transit project](../transit/README.md). They are not routes of this application.
 
 ### Real-time and device interfaces
 
@@ -461,7 +464,7 @@ Public routes are limited to:
 - `/api/walker-applications`.
 - `/ws/**` and `/error`.
 
-All other API routes require a valid JWT. `/api/admin/**` and `/api/transit/**` require `ROLE_ADMIN`. Authorization is also enforced in the domain services so normal users cannot use an ID to access another owner's pets, locations, geofences, requests, walks, or private group data.
+All protected routes in this application require a valid JWT; `/api/admin/**` requires `ROLE_ADMIN`. Authorization is also enforced in domain services so users cannot use an ID to access another owner's pets, locations, geofences, requests, walks, or private group data. The sibling Transit README says FiruApp authentication was not carried over there.
 
 Additional security characteristics:
 
@@ -480,7 +483,7 @@ At startup the order is:
 
 1. Spring connects to the configured datasource.
 2. `schema.sql` runs because `spring.sql.init.mode=always`.
-3. The script enables PostGIS, adds compatible columns/constraints, creates missing marketplace/transit tables, and creates indexes.
+3. The script enables PostGIS, adds compatible columns/constraints, creates missing FiruApp marketplace tables, and creates indexes.
 4. Hibernate starts with `ddl-auto=validate` and verifies that the database matches the entities; Hibernate does not create tables in the normal configuration.
 5. `ApplicationReadyEvent` listeners start the GPS listener and seed demo walkers/owner data.
 
@@ -488,7 +491,7 @@ The current configuration also has `spring.sql.init.continue-on-error=true` for 
 
 `docker-compose.yml` starts PostGIS and Redis. The Docker Postgres init directory only enables PostGIS on a new database volume; the application `schema.sql` is responsible for the application schema during boot.
 
-`schema.sql` is currently a compatibility/bootstrap script, not a complete versioned database baseline. Existing installations must contain the original core tracker tables (`users`, `pet`, `location`, `geofence`, `alert`, and related tables) before Hibernate validation can pass. The script adds the newer marketplace/transit tables and indexes. A fresh environment should be initialized from the project's database baseline or a database dump before starting with `ddl-auto=validate`; using `ddl-auto=update` is intended only as a temporary local recovery/bootstrap option.
+`schema.sql` is currently a compatibility/bootstrap script, not a complete versioned database baseline. Existing installations must contain the original core tracker tables (`users`, `pet`, `location`, `geofence`, `alert`, and related tables) before Hibernate validation can pass. The script adds the newer FiruApp marketplace tables and indexes; Transit uses its own project and schema. A fresh environment should be initialized from the project's database baseline or a database dump before starting with `ddl-auto=validate`; using `ddl-auto=update` is intended only as a temporary local recovery/bootstrap option.
 
 ## Local development
 
@@ -580,6 +583,10 @@ Spring values can be supplied through environment variables. The most important 
 | `SPRING_MAIL_USERNAME` | empty | SMTP username |
 | `SPRING_MAIL_PASSWORD` | empty | SMTP password |
 | `NOTIFICATIONS_EMAIL_FROM` | empty | Optional email sender address |
+| `APP_VERIFICATION_BASE_URL` | `http://localhost:8080` | Public backend base URL used in signup confirmation links |
+| `SPRING_MAIL_SMTP_CONNECTION_TIMEOUT` | `10000` | SMTP connection timeout in milliseconds |
+| `SPRING_MAIL_SMTP_TIMEOUT` | `10000` | SMTP read timeout in milliseconds |
+| `SPRING_MAIL_SMTP_WRITE_TIMEOUT` | `10000` | SMTP write timeout in milliseconds |
 
 GPS and database pool tuning variables are also available under `application.yml`, including `GPS_INGESTION_*`, `SPRING_DATASOURCE_HIKARI_*`, `SERVER_TOMCAT_*`, and `JDBC_WATCHDOG_*`.
 
@@ -657,12 +664,9 @@ Recommended next steps:
 ```text
 src/main/java/com/example/pettracker/
 ├── controller/                  Core REST controllers
-├── transit/controller/          Transit REST controllers
 ├── service/                     Business workflows and integrations
 ├── repository/                  Core JPA repositories
-├── transit/repository/           Transit JPA repositories
 ├── entity/                      Core JPA entities
-├── transit/entity/               Transit JPA entities
 ├── dto/                         API request/response records and classes
 ├── mapper/                      Entity-to-DTO mapping
 ├── security/                    JWT, BCrypt, and access rules

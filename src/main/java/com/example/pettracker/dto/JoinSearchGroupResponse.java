@@ -10,5 +10,8 @@ public record JoinSearchGroupResponse(
         VolunteerDto volunteer,
         String message,
         boolean alreadyMember,
-        boolean reactivated) {
+        boolean reactivated,
+        boolean pendingApproval,
+        Long rejoinRequestId,
+        boolean requestAlreadyPending) {
 }

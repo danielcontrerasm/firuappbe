@@ -4,6 +4,7 @@ import com.example.pettracker.dto.AuthDTOs.LoginRequest;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.security.JwtProvider;
 import com.example.pettracker.service.LoginDemoDataService;
+import com.example.pettracker.service.EmailVerificationService;
 import com.example.pettracker.service.UserService;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,8 @@ class DemoLoginTest {
     private final PasswordEncoder passwords = mock(PasswordEncoder.class);
     private final JwtProvider jwt = mock(JwtProvider.class);
     private final LoginDemoDataService demo = mock(LoginDemoDataService.class);
-    private final AuthController controller = new AuthController(users, passwords, jwt, demo);
+    private final EmailVerificationService emailVerification = mock(EmailVerificationService.class);
+    private final AuthController controller = new AuthController(users, passwords, jwt, demo, emailVerification);
 
     @Test
     void seedsAfterPasswordVerificationAndBeforeReturningTheToken() {

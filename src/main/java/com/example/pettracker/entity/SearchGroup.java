@@ -7,8 +7,6 @@ import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.Set;
 
 @Entity
 @Data
@@ -26,6 +24,9 @@ public class SearchGroup {
 
     private String groupName;
 
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_CLOSED = "CLOSED";
+
     /** PRIVATE preserves the original behavior; PUBLIC is discoverable and joinable by anyone. */
     @Builder.Default
     private String visibility = "PRIVATE";
@@ -34,7 +35,7 @@ public class SearchGroup {
     private String description;
 
     @Builder.Default
-    private String status = "active";
+    private String status = STATUS_ACTIVE;
 
     private String area;
 
@@ -65,10 +66,4 @@ public class SearchGroup {
     @Builder.Default
     private Instant createdAt = Instant.now();
 
-    @ManyToMany
-    @JoinTable(name = "searchgroup_volunteers",
-            joinColumns = @JoinColumn(name = "group_id"),
-            inverseJoinColumns = @JoinColumn(name = "user_id"))
-    @Builder.Default
-    private Set<User> volunteers = new HashSet<>();
 }

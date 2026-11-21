@@ -2,19 +2,26 @@ package com.example.pettracker.service;
 
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.VolunteerCandidateDto;
+import com.example.pettracker.dto.VolunteerRejoinRequestDto;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
+import com.example.pettracker.entity.VolunteerRejoinRequest;
+import com.example.pettracker.entity.VolunteerRejoinRequest.Status;
+import com.example.pettracker.event.VolunteerRejoinRequestedEvent;
+import com.example.pettracker.event.VolunteerRejoinResolvedEvent;
 import com.example.pettracker.repository.SearchGroupRepository;
 import com.example.pettracker.repository.UserRepository;
 import com.example.pettracker.repository.VolunteerRepository;
+import com.example.pettracker.repository.VolunteerRejoinRequestRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,31 +33,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VolunteerServiceTest {
 
     private VolunteerRepository volunteerRepository;
+    private VolunteerRejoinRequestRepository rejoinRequestRepository;
     private SearchGroupRepository searchGroupRepository;
     private UserRepository userRepository;
     private NotificationService notificationService;
     private ImageUploadLimits imageUploadLimits;
+    private ApplicationEventPublisher eventPublisher;
     private VolunteerService volunteerService;
 
     @BeforeEach
     void setUp() {
         volunteerRepository = mock(VolunteerRepository.class);
+        rejoinRequestRepository = mock(VolunteerRejoinRequestRepository.class);
         searchGroupRepository = mock(SearchGroupRepository.class);
         userRepository = mock(UserRepository.class);
         notificationService = mock(NotificationService.class);
         imageUploadLimits = mock(ImageUploadLimits.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         volunteerService = new VolunteerService(
                 volunteerRepository,
+                rejoinRequestRepository,
                 searchGroupRepository,
                 userRepository,
                 notificationService,
-                imageUploadLimits);
+                imageUploadLimits,
+                eventPublisher);
 
         when(searchGroupRepository.save(any(SearchGroup.class))).thenAnswer(invocation -> {
             SearchGroup group = invocation.getArgument(0);
@@ -60,6 +74,13 @@ class VolunteerServiceTest {
             return group;
         });
         when(volunteerRepository.save(any(Volunteer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(rejoinRequestRepository.save(any(VolunteerRejoinRequest.class))).thenAnswer(invocation -> {
+            VolunteerRejoinRequest request = invocation.getArgument(0);
+            if (request.getId() == null) {
+                request.setId(700L);
+            }
+            return request;
+        });
     }
 
     @Test
@@ -82,13 +103,11 @@ class VolunteerServiceTest {
                 4.0,
                 List.of(2L, 2L));
 
-        assertEquals(2, group.getVolunteers().size());
-        assertTrue(group.getVolunteers().contains(owner));
-        assertTrue(group.getVolunteers().contains(member));
-        verify(notificationService).sendEmail(
-                "member@example.com",
-                "Pet search group",
-                "You were added to search group 'Find Milo'");
+        org.mockito.ArgumentCaptor<Volunteer> membershipCaptor = org.mockito.ArgumentCaptor.forClass(Volunteer.class);
+        verify(volunteerRepository, times(2)).save(membershipCaptor.capture());
+        assertEquals(List.of(owner.getId(), member.getId()), membershipCaptor.getAllValues().stream()
+                .map(membership -> membership.getUser().getId())
+                .toList());
     }
 
     @Test
@@ -103,7 +122,8 @@ class VolunteerServiceTest {
                 .joinedAt(Instant.EPOCH)
                 .build();
         when(userRepository.findById(2L)).thenReturn(Optional.of(member));
-        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        group.setVisibility("PUBLIC");
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
         when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(existing);
 
         Volunteer result = volunteerService.joinSearchGroup(2L, 50L);
@@ -111,7 +131,7 @@ class VolunteerServiceTest {
         assertSame(existing, result);
         assertTrue(result.getActive());
         assertFalse(result.getJoinedAt().equals(Instant.EPOCH));
-        assertTrue(group.getVolunteers().contains(member));
+        assertFalse(result.getRevoked());
     }
 
     @Test
@@ -125,7 +145,7 @@ class VolunteerServiceTest {
                 .active(true)
                 .build();
         when(userRepository.findById(2L)).thenReturn(Optional.of(member));
-        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
         when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(existing);
 
         VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(2L, 50L);
@@ -146,7 +166,7 @@ class VolunteerServiceTest {
                 .groupName("Find Milo")
                 .build();
         when(userRepository.findById(2L)).thenReturn(Optional.of(outsider));
-        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
         when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(null);
 
         ResponseStatusException exception = assertThrows(
@@ -166,16 +186,16 @@ class VolunteerServiceTest {
                 .groupName("Old name")
                 .status("active")
                 .build();
-        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
 
         SearchGroup updated = volunteerService.updateSearchGroup(
                 50L,
                 owner,
                 new SearchGroupUpdateRequest(
-                        "New name", null, "paused", null, "Bogota", null, null, 2.5, null));
+                        "New name", null, "closed", null, "Bogota", null, null, 2.5, null));
 
         assertEquals("New name", updated.getGroupName());
-        assertEquals("paused", updated.getStatus());
+        assertEquals(SearchGroup.STATUS_CLOSED, updated.getStatus());
         assertEquals("Bogota", updated.getCity());
         assertEquals(2.5, updated.getCoverageRadiusKm());
     }
@@ -185,7 +205,7 @@ class VolunteerServiceTest {
         User owner = user(1L, "Owner", "owner@example.com");
         User unrelatedUser = user(3L, "Other", "other@example.com");
         SearchGroup group = SearchGroup.builder().id(50L).createdBy(owner).build();
-        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
 
         assertThrows(
                 ResponseStatusException.class,
@@ -237,6 +257,160 @@ class VolunteerServiceTest {
                 () -> volunteerService.searchVolunteerCandidates(
                         50L, "daniel", unrelatedUser, Pageable.ofSize(20)));
         verify(userRepository, never()).searchVolunteerCandidates(any(), any(), any());
+    }
+
+    @Test
+    void revokedMemberCreatesPendingRequestAndNotifiesCreator() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder()
+                .id(50L)
+                .createdBy(creator)
+                .groupName("Find Milo")
+                .visibility("PRIVATE")
+                .status(SearchGroup.STATUS_ACTIVE)
+                .build();
+        Volunteer revokedMembership = Volunteer.builder()
+                .id(80L)
+                .user(member)
+                .searchGroup(group)
+                .active(false)
+                .revoked(true)
+                .build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(member));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(revokedMembership);
+
+        VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(2L, 50L);
+
+        assertTrue(result.pendingApproval());
+        assertFalse(result.alreadyMember());
+        assertFalse(result.reactivated());
+        assertEquals(700L, result.rejoinRequestId());
+        assertFalse(result.requestAlreadyPending());
+        assertFalse(revokedMembership.getActive());
+        assertTrue(revokedMembership.getRevoked());
+        verify(rejoinRequestRepository).save(any(VolunteerRejoinRequest.class));
+        verify(eventPublisher).publishEvent(new VolunteerRejoinRequestedEvent(700L));
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+    }
+
+    @Test
+    void repeatedRevokedJoinReusesPendingRequestWithoutSendingAnotherNotification() {
+        User member = user(2L, "Member", "member@example.com");
+        User creator = user(1L, "Creator", "creator@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).groupName("Find Milo").build();
+        Volunteer revokedMembership = Volunteer.builder()
+                .id(80L).user(member).searchGroup(group).active(false).revoked(true).build();
+        VolunteerRejoinRequest pendingRequest = VolunteerRejoinRequest.builder()
+                .id(701L)
+                .volunteer(revokedMembership)
+                .searchGroup(group)
+                .status(Status.PENDING)
+                .createdAt(Instant.EPOCH)
+                .build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(member));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(revokedMembership);
+        when(rejoinRequestRepository.findFirstByVolunteerIdAndStatusOrderByCreatedAtDesc(80L, Status.PENDING))
+                .thenReturn(Optional.of(pendingRequest));
+
+        VolunteerService.JoinSearchGroupResult result = volunteerService.joinSearchGroupWithResult(2L, 50L);
+
+        assertTrue(result.pendingApproval());
+        assertTrue(result.requestAlreadyPending());
+        assertEquals(701L, result.rejoinRequestId());
+        verify(rejoinRequestRepository, never()).save(any(VolunteerRejoinRequest.class));
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void groupCreatorCanApproveRejoinRequestAndReactivateMembership() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).status(SearchGroup.STATUS_ACTIVE).build();
+        Volunteer revokedMembership = Volunteer.builder()
+                .id(80L).user(member).searchGroup(group).active(false).revoked(true).joinedAt(Instant.EPOCH).build();
+        VolunteerRejoinRequest pendingRequest = VolunteerRejoinRequest.builder()
+                .id(700L).volunteer(revokedMembership).searchGroup(group).status(Status.PENDING).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(rejoinRequestRepository.findByIdAndSearchGroupId(700L, 50L)).thenReturn(Optional.of(pendingRequest));
+        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
+
+        VolunteerRejoinRequestDto result = volunteerService.approveRejoinRequest(50L, 700L, creator);
+
+        assertEquals("APPROVED", result.status());
+        assertTrue(revokedMembership.getActive());
+        assertFalse(revokedMembership.getRevoked());
+        assertFalse(revokedMembership.getJoinedAt().equals(Instant.EPOCH));
+        assertEquals(Status.APPROVED, pendingRequest.getStatus());
+        assertSame(creator, pendingRequest.getReviewedBy());
+        verify(volunteerRepository).save(revokedMembership);
+        verify(eventPublisher).publishEvent(new VolunteerRejoinResolvedEvent(700L));
+    }
+
+    @Test
+    void groupCreatorCanRejectRejoinRequestWithoutReactivatingMembership() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).build();
+        Volunteer revokedMembership = Volunteer.builder()
+                .id(80L).user(member).searchGroup(group).active(false).revoked(true).build();
+        VolunteerRejoinRequest pendingRequest = VolunteerRejoinRequest.builder()
+                .id(700L).volunteer(revokedMembership).searchGroup(group).status(Status.PENDING).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(rejoinRequestRepository.findByIdAndSearchGroupId(700L, 50L)).thenReturn(Optional.of(pendingRequest));
+        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
+
+        VolunteerRejoinRequestDto result = volunteerService.rejectRejoinRequest(50L, 700L, creator);
+
+        assertEquals("REJECTED", result.status());
+        assertEquals(Status.REJECTED, pendingRequest.getStatus());
+        assertFalse(revokedMembership.getActive());
+        assertTrue(revokedMembership.getRevoked());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+        verify(eventPublisher).publishEvent(new VolunteerRejoinResolvedEvent(700L));
+    }
+
+    @Test
+    void nonCreatorCannotApproveOrRejectRejoinRequest() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User otherUser = user(2L, "Other", "other@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException approveException = assertThrows(
+                ResponseStatusException.class,
+                () -> volunteerService.approveRejoinRequest(50L, 700L, otherUser));
+        ResponseStatusException rejectException = assertThrows(
+                ResponseStatusException.class,
+                () -> volunteerService.rejectRejoinRequest(50L, 700L, otherUser));
+
+        assertEquals(HttpStatus.NOT_FOUND, approveException.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, rejectException.getStatusCode());
+        verify(rejoinRequestRepository, never()).findByIdAndSearchGroupId(any(), any());
+        verify(rejoinRequestRepository, never()).save(any(VolunteerRejoinRequest.class));
+    }
+
+    @Test
+    void managerCannotBypassCreatorReviewByAddingRevokedMemberDirectly() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User admin = user(3L, "Admin", "admin@example.com");
+        admin.setRole(User.Role.ADMIN);
+        User revokedMember = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).build();
+        Volunteer membership = Volunteer.builder()
+                .id(80L).user(revokedMember).searchGroup(group).active(false).revoked(true).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(revokedMember));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(membership);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> volunteerService.addVolunteer(50L, 2L, admin));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
     }
 
     private User user(Long id, String name, String email) {

@@ -72,6 +72,7 @@ themeToggleBtn.innerHTML = savedTheme === "firuapp"
 
 document.getElementById("ownerRegisterForm").addEventListener("submit", registerOwner);
 document.getElementById("loginForm").addEventListener("submit", login);
+document.getElementById("resendVerificationForm").addEventListener("submit", resendVerificationEmail);
 document.getElementById("walkerApplicationForm").addEventListener("submit", applyWalker);
 document.getElementById("petForm").addEventListener("submit", createPet);
 document.getElementById("searchGroupForm").addEventListener("submit", createSearchGroup);
@@ -173,10 +174,18 @@ async function registerOwner(event) {
         method: "POST",
         body: JSON.stringify(payload)
     });
-    setToken(response.token);
     event.currentTarget.reset();
-    toast("Cuenta creada. Ya puedes gestionar mascotas y solicitudes.");
-    await loadSession();
+    toast(response.message || "Cuenta creada. Revisa tu correo para confirmar la dirección antes de iniciar sesión.");
+}
+
+async function resendVerificationEmail(event) {
+    event.preventDefault();
+    const payload = formToObject(event.currentTarget);
+    const response = await api("/api/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    toast(response.message);
 }
 
 async function login(event) {
@@ -280,7 +289,53 @@ async function refreshSearchGroups() {
     }
 }
 
+// REVIEWED
 async function joinSearchGroup(event) {
+    const decisionButton = event.target.closest("[data-rejoin-request-action]");
+    if (decisionButton) {
+        const { groupId, requestId, rejoinRequestAction: action } = decisionButton.dataset;
+        if (action === "reject" && !window.confirm("¿Rechazar esta solicitud de reingreso?")) return;
+        decisionButton.disabled = true;
+        try {
+            await api(`/api/search-groups/${groupId}/rejoin-requests/${requestId}/${action}`, {
+                method: "POST"
+            });
+            toast(action === "approve" ? "Solicitud aprobada. El miembro volvió al grupo." : "Solicitud rechazada.");
+            await loadPendingRejoinRequests(groupId);
+            await loadSearchGroups();
+        } catch (error) {
+            decisionButton.disabled = false;
+            toast(error.message);
+        }
+        return;
+    }
+
+    const requestsButton = event.target.closest("[data-show-rejoin-requests]");
+    if (requestsButton) {
+        requestsButton.disabled = true;
+        try {
+            await loadPendingRejoinRequests(requestsButton.dataset.showRejoinRequests);
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            requestsButton.disabled = false;
+        }
+        return;
+    }
+
+    const closeButton = event.target.closest("[data-close-search-group]");
+    if (closeButton) {
+        const groupId = closeButton.dataset.closeSearchGroup;
+        if (!window.confirm("¿Cerrar este grupo? Ya no se podrán unir voluntarios ni enviar mensajes.")) return;
+        try {
+            await api(`/api/search-groups/${groupId}/close`, { method: "POST" });
+            toast("Grupo cerrado. El historial se conserva.");
+            await loadSearchGroups();
+        } catch (error) {
+            toast(error.message);
+        }
+        return;
+    }
     const button = event.target.closest("[data-join-search-group]");
     if (!button) {
         return;
@@ -297,6 +352,25 @@ async function joinSearchGroup(event) {
         button.disabled = false;
         toast(error.message);
     }
+}
+
+// REVIEWED
+async function loadPendingRejoinRequests(groupId) {
+    const requests = await api(`/api/search-groups/${groupId}/rejoin-requests`);
+    const container = el.searchGroupsList.querySelector(`[data-rejoin-request-list="${groupId}"]`);
+    if (!container) return;
+    container.innerHTML = requests.length
+        ? requests.map((request) => `
+            <article class="list-item">
+                <strong>${escapeHtml(request.volunteerName || "Voluntario")}</strong>
+                <p>Solicita volver al grupo · ${escapeHtml(formatDateTime(request.createdAt))}</p>
+                <button type="button" class="icon-button" data-group-id="${groupId}"
+                    data-request-id="${request.id}" data-rejoin-request-action="approve">Aprobar</button>
+                <button type="button" class="ghost-button" data-group-id="${groupId}"
+                    data-request-id="${request.id}" data-rejoin-request-action="reject">Rechazar</button>
+            </article>
+        `).join("")
+        : `<p class="muted">No hay solicitudes de reingreso pendientes.</p>`;
 }
 
 async function refreshAlerts() {
@@ -747,6 +821,7 @@ function renderAlerts() {
     `).join("");
 }
 
+// REVIEWED
 function renderSearchGroups() {
     if (!el.searchGroupsList) {
         return;
@@ -763,7 +838,7 @@ function renderSearchGroups() {
     el.searchGroupsList.innerHTML = state.searchGroups.map((group) => `
         <article class="list-item search-group-card">
             <div class="search-banner">
-                <span class="search-banner-label">BUSCANDO ESTA MASCOTA</span>
+                <span class="search-banner-label">GRUPO DE VOLUNTARIOS</span>
                 <strong>${escapeHtml(group.petName || "Mascota")}</strong>
                 <span>Foto #${escapeHtml(String(group.petId || "—"))}</span>
             </div>
@@ -772,21 +847,28 @@ function renderSearchGroups() {
                     <strong>${escapeHtml(group.groupName || "Grupo de búsqueda")}</strong>
                     <div class="muted">${escapeHtml(group.petName || "Mascota sin nombre")}</div>
                 </div>
-                <span class="tag ${String(group.status || "").toLowerCase() === "active" ? "ok" : "warn"}">
+                <span class="tag ${String(group.status || "").toUpperCase() === "ACTIVE" ? "ok" : "warn"}">
                     ${escapeHtml(group.status || "Sin estado")}
                 </span>
             </header>
             <span class="tag ${group.visibility === "PUBLIC" ? "ok" : "muted"}">
                 ${group.visibility === "PUBLIC" ? "Público · cualquiera puede unirse" : "Privado"}
             </span>
-            <p>${escapeHtml(group.description || "Ayuda a coordinar la búsqueda de esta mascota.")}</p>
+            <p>${escapeHtml(group.description || "Espacio para coordinar las actividades de este grupo.")}</p>
             <div class="meta-line">
                 <span>${escapeHtml([group.area, group.city].filter(Boolean).join(" · ") || "Zona sin definir")}</span>
                 <span>${formatNumber(group.membersCount || 0)} voluntario(s)</span>
             </div>
-            <button type="button" class="icon-button" data-join-search-group="${group.id}">
-                Unirme al grupo
-            </button>
+            ${String(group.status || "").toUpperCase() === "ACTIVE"
+                ? `<button type="button" class="icon-button" data-join-search-group="${group.id}">Unirme al grupo</button>`
+                : `<p class="muted">Grupo cerrado. El historial sigue disponible para sus miembros.</p>`}
+            ${group.canClose && String(group.status || "").toUpperCase() === "ACTIVE"
+                ? `<button type="button" class="ghost-button" data-close-search-group="${group.id}">Cerrar grupo</button>`
+                : ""}
+            ${group.canClose
+                ? `<button type="button" class="icon-button" data-show-rejoin-requests="${group.id}">Solicitudes de reingreso</button>
+                    <div data-rejoin-request-list="${group.id}"></div>`
+                : ""}
         </article>
     `).join("");
 }

@@ -34,6 +34,10 @@ public class User {
     @Builder.Default
     private Plan plan = Plan.BASIC;
 
+    @Column(name = "email_verified", nullable = false)
+    @Builder.Default
+    private boolean emailVerified = true;
+
     public enum Role { USER, WALKER, ADMIN }
 
     public enum Plan { BASIC, FAMILY, PREMIUM }

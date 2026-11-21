@@ -259,7 +259,7 @@ public class GeofencingService {
             alertService.createAlert(pet, com.example.pettracker.entity.Alert.AlertType.BOUNDARY, metadata);
             notificationService.notifyOwner(pet.getOwner(),
                     "Alert: Your pet " + pet.getName() + " left its geofence. " + metadata);
-            volunteerNotificationService.notifyVolunteers(pet, "OUT_OF_ZONE");
+            volunteerNotificationService.notifyPetGroupMembers(pet, "OUT_OF_ZONE");
         } catch (RuntimeException ex) {
             Long petId = location == null || location.getPet() == null ? null : location.getPet().getId();
             double latitude = location == null ? 0 : location.getLatitude();

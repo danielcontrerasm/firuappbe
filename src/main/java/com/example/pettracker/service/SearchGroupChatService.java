@@ -69,6 +69,9 @@ public class SearchGroupChatService {
         User current = currentUserService.require(authentication);
         SearchGroup group = findGroup(searchGroupId);
         requireChatAccess(current, group);
+        if (SearchGroup.STATUS_CLOSED.equalsIgnoreCase(group.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This search group is closed");
+        }
 
         if (request == null || request.body() == null || request.body().isBlank()) {
             throw new RuntimeException("Message body is required");

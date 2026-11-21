@@ -16,6 +16,7 @@ public class LostPetNotificationService {
 
     private final NotificationService notificationService;
     private final PetRepository petRepository;
+    private final VolunteerNotificationService volunteerNotificationService;
 
     /**
      * Sends notifications to pet owner when their pet is marked as lost
@@ -44,6 +45,8 @@ public class LostPetNotificationService {
                         "left home ");
         notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche necesita tu ayuda. Revisa su ubicacion en la app.");
         notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche salio de su zona segura. Revisa su ubicacion en la app");
+
+        volunteerNotificationService.notifyPetGroupMembers(pet, "LOST");
 
         log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
         // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);

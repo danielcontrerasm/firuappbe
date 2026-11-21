@@ -1,10 +1,10 @@
 # Matriz de trazabilidad de la API
 
-Esta matriz relaciona las **87 operaciones HTTP distintas de 14 controladores** con el [catálogo de requisitos](catalogo-requisitos.md). Se obtuvo de los mappings del código local revisado el 11 de noviembre de 2026; incluye los cambios locales presentes sobre el commit `830fffe`.
+Esta matriz relaciona las **78 operaciones HTTP distintas de 11 controladores** con el [catálogo de requisitos](catalogo-requisitos.md). Se obtuvo de los mappings del código local revisado el 21 de noviembre de 2026; incluye los cambios locales presentes sobre el commit `830fffe`.
 
-Hay 91 métodos con mappings: crear/editar mascota y crear/editar grupo tienen variantes JSON y multipart para la misma combinación de método y ruta. Se cuentan como cuatro operaciones, no como ocho. `ApiExceptionHandler` es un manejador de errores y no añade endpoints.
+Hay 82 métodos con mappings: crear/editar mascota y crear/editar grupo tienen variantes JSON y multipart para la misma combinación de método y ruta. Se cuentan como cuatro operaciones, no como ocho. `ApiExceptionHandler` es un manejador de errores y no añade endpoints. Transit se extrajo a `../transit`; sus rutas no se cuentan aquí.
 
-«JWT» indica el requisito de autenticación HTTP; **también aplican los permisos por recurso descritos en cada RF**. «Público» permite acceso sin sesión, pero aceptación temporal exige token válido. Grupos PUBLIC siguen requiriendo JWT. Todas las operaciones de transporte y administración requieren ADMIN.
+«JWT» indica el requisito de autenticación HTTP; **también aplican los permisos por recurso descritos en cada RF**. «Público» permite acceso sin sesión, pero aceptación temporal exige token válido. Grupos PUBLIC siguen requiriendo JWT. Las rutas de administración de esta aplicación requieren ADMIN. El README de Transit indica que la autenticación de FiruApp no se trasladó; el catálogo registra esta brecha.
 
 Los enlaces RF llevan a su sección del catálogo, donde se encuentra la fila con el identificador. Esta es trazabilidad de código, no constancia de pruebas ejecutadas ni aprobación de decisiones pendientes.
 
@@ -32,6 +32,8 @@ Fuente: [AuthController.java](../src/main/java/com/example/pettracker/controller
 | Método | Ruta | Requisitos | Acceso HTTP |
 | --- | --- | --- | --- |
 | POST | `/api/auth/register` | [RF-AUT-001](catalogo-requisitos.md#autenticación-y-sesión), [RF-PLA-001](catalogo-requisitos.md#planes-y-límites) | Público |
+| GET | `/api/auth/verify-email` | [RF-AUT-001](catalogo-requisitos.md#autenticación-y-sesión) | Público |
+| POST | `/api/auth/resend-verification` | [RF-AUT-001](catalogo-requisitos.md#autenticación-y-sesión) | Público |
 | POST | `/api/auth/login` | [RF-AUT-002](catalogo-requisitos.md#autenticación-y-sesión) | Público |
 
 ## GeofenceController
@@ -96,11 +98,15 @@ Fuente: [SearchGroupController.java](../src/main/java/com/example/pettracker/con
 | --- | --- | --- | --- |
 | POST | `/api/search-groups` | [RF-GRU-006](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-008](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-013](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-014](catalogo-requisitos.md#grupos-de-búsqueda), [RF-PLA-005](catalogo-requisitos.md#planes-y-límites) | JWT |
 | PUT | `/api/search-groups/{searchGroupId}` | [RF-GRU-007](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-008](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-013](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-014](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
+| POST | `/api/search-groups/{searchGroupId}/close` | [RF-GRU-007](catalogo-requisitos.md#grupos-de-búsqueda) | JWT, creador |
 | GET | `/api/search-groups/{searchGroupId}` | [RF-GRU-012](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
 | GET | `/api/search-groups/{searchGroupId}/image` | [RF-GRU-013](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
 | GET | `/api/search-groups` | [RF-GRU-009](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
 | GET | `/api/search-groups/pet/{petId}` | [RF-GRU-011](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
 | POST | `/api/search-groups/{searchGroupId}/join` | [RF-GRU-001](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-005](catalogo-requisitos.md#grupos-de-búsqueda), [RF-GRU-017](catalogo-requisitos.md#grupos-de-búsqueda), [RF-NOT-006](catalogo-requisitos.md#notificaciones) | JWT |
+| GET | `/api/search-groups/{searchGroupId}/rejoin-requests` | [RF-GRU-005](catalogo-requisitos.md#grupos-de-búsqueda) | JWT, creador |
+| POST | `/api/search-groups/{searchGroupId}/rejoin-requests/{requestId}/approve` | [RF-GRU-005](catalogo-requisitos.md#grupos-de-búsqueda), [RF-NOT-006](catalogo-requisitos.md#notificaciones) | JWT, creador |
+| POST | `/api/search-groups/{searchGroupId}/rejoin-requests/{requestId}/reject` | [RF-GRU-005](catalogo-requisitos.md#grupos-de-búsqueda), [RF-NOT-006](catalogo-requisitos.md#notificaciones) | JWT, creador |
 | POST | `/api/search-groups/{searchGroupId}/volunteers/{userId}` | [RF-GRU-002](catalogo-requisitos.md#grupos-de-búsqueda), [RF-NOT-006](catalogo-requisitos.md#notificaciones) | JWT |
 | DELETE | `/api/search-groups/{searchGroupId}/volunteers/{userId}` | [RF-GRU-004](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
 | GET | `/api/search-groups/{searchGroupId}/member-candidates` | [RF-GRU-016](catalogo-requisitos.md#grupos-de-búsqueda) | JWT |
@@ -157,41 +163,9 @@ Fuente: [WalkerMarketplaceController.java](../src/main/java/com/example/pettrack
 | PUT | `/api/admin/walkers/{id}` | [RF-PAS-006](catalogo-requisitos.md#catálogo-y-administración-de-paseadores) | ADMIN |
 | DELETE | `/api/admin/walkers/{id}` | [RF-PAS-007](catalogo-requisitos.md#catálogo-y-administración-de-paseadores) | ADMIN |
 
-## TransitGeofenceController
+## Servicio Transit separado
 
-Fuente: [TransitGeofenceController.java](../src/main/java/com/example/pettracker/transit/controller/TransitGeofenceController.java).
-
-| Método | Ruta | Requisitos | Acceso HTTP |
-| --- | --- | --- | --- |
-| POST | `/api/transit/geofences/vehicle/{vehicleId}` | [RF-TRA-008](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/geofences/vehicle/{vehicleId}` | [RF-TRA-009](catalogo-requisitos.md#transporte) | ADMIN |
-| DELETE | `/api/transit/geofences/{geofenceId}` | [RF-TRA-010](catalogo-requisitos.md#transporte) | ADMIN |
-
-## TransitSearchGroupController
-
-Fuente: [TransitSearchGroupController.java](../src/main/java/com/example/pettracker/transit/controller/TransitSearchGroupController.java).
-
-| Método | Ruta | Requisitos | Acceso HTTP |
-| --- | --- | --- | --- |
-| POST | `/api/transit/search-groups` | [RF-TRA-012](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/search-groups/vehicle/{vehicleId}` | [RF-TRA-013](catalogo-requisitos.md#transporte) | ADMIN |
-| POST | `/api/transit/search-groups/{searchGroupId}/join` | [RF-TRA-014](catalogo-requisitos.md#transporte) | ADMIN |
-| POST | `/api/transit/search-groups/{searchGroupId}/leave` | [RF-TRA-015](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/search-groups/my` | [RF-TRA-013](catalogo-requisitos.md#transporte) | ADMIN |
-
-## TransitVehicleController
-
-Fuente: [TransitVehicleController.java](../src/main/java/com/example/pettracker/transit/controller/TransitVehicleController.java).
-
-| Método | Ruta | Requisitos | Acceso HTTP |
-| --- | --- | --- | --- |
-| GET | `/api/transit/vehicles` | [RF-TRA-002](catalogo-requisitos.md#transporte) | ADMIN |
-| POST | `/api/transit/vehicles` | [RF-TRA-001](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/vehicles/{id}` | [RF-TRA-003](catalogo-requisitos.md#transporte) | ADMIN |
-| POST | `/api/transit/vehicles/{id}/locations` | [RF-TRA-004](catalogo-requisitos.md#transporte), [RF-TRA-011](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/vehicles/{id}/locations/latest` | [RF-TRA-005](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/vehicles/{id}/route` | [RF-TRA-006](catalogo-requisitos.md#transporte) | ADMIN |
-| GET | `/api/transit/vehicles/{id}/report` | [RF-TRA-007](catalogo-requisitos.md#transporte) | ADMIN |
+Las rutas de Transit ya no pertenecen a este backend y se excluyen de esta matriz. El [proyecto Transit](../../transit/README.md) es una aplicación Spring Boot independiente; su inventario de rutas y el diseño de autenticación deben documentarse allí.
 
 ## Capacidades sin endpoint propio
 

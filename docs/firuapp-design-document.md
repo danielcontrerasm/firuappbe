@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Firuapp is a pet tracking, geofencing, lost-pet coordination, and dog-walking marketplace platform. The backend currently lives in the `pettracker` Spring Boot service and serves REST APIs, a static web dashboard, a GPS TCP listener, notifications, geofence processing, marketplace workflows, transit tracking modules, and admin operational metrics.
+Firuapp is a pet tracking, geofencing, lost-pet coordination, and dog-walking marketplace platform. The FiruApp backend lives in the `pettracker` Spring Boot service and serves REST APIs, a static web dashboard, a GPS TCP listener, notifications, geofence processing, marketplace workflows, and admin operational metrics. Transit tracking is a separate Spring Boot project at `../transit`.
 
 This document defines the current system design, functional and non-functional requirements, data model, runtime architecture, deployment model, sequence flows, and operational considerations.
 
@@ -21,7 +21,7 @@ This document defines the current system design, functional and non-functional r
 - Dog walker marketplace, quote, request, chat, active walk tracking, and completion.
 - Admin walker management.
 - Admin metrics dashboard for HTTP, DB, Hikari, and GPS ingestion signals.
-- Transit tracking module for vehicles, scheduled geofences, search groups, and reports.
+- Transit tracking is documented separately in the sibling [Transit project](../../transit/README.md); it is outside this service boundary.
 
 ### Out of Scope
 
@@ -52,11 +52,11 @@ This document defines the current system design, functional and non-functional r
 | --- | --- | --- |
 | USER | Pet owner | Manage own pets, locations, routes, geofences, walk requests and dog walks; manage own lost-pet groups and view the lost-pet wall |
 | WALKER | Dog walker | Receive walk requests, quote, chat, start walks, send positions, complete walks |
-| ADMIN | Platform admin | Manage walkers, view metrics, access all owner, walker, search-group, and transit resources |
+| ADMIN | Platform admin | Manage walkers, view metrics, and access owner, walker, and search-group resources in this backend |
 
 ## 5. Functional Requirements
 
-The numbered requirements are maintained in the [requirements catalogue](catalogo-requisitos.md), with names, actors, acceptance criteria, implementation status, code references, and existing tests. The [API traceability matrix](matriz-trazabilidad-api.md) maps all 87 distinct HTTP operations in this repository to those requirements.
+The numbered requirements are maintained in the [requirements catalogue](catalogo-requisitos.md), with names, actors, acceptance criteria, implementation status, code references, and existing tests. The [API traceability matrix](matriz-trazabilidad-api.md) maps the 78 distinct HTTP operations in this repository to those requirements. Transit endpoints are not included.
 
 The catalogue distinguishes behavior observed in code from partial implementations, unresolved product decisions, future capabilities, and external commercial commitments. An implementation reference is not evidence that acceptance tests have passed.
 
@@ -71,13 +71,13 @@ The catalogue distinguishes behavior observed in code from partial implementatio
 | Search groups, membership, and chat | RF-GRU-001 through RF-GRU-017; RF-CHA-001 through RF-CHA-002 |
 | Walker profiles, requests, and walks | RF-PAS-001 through RF-PAS-007; RF-SOL-001 through RF-SOL-007; RF-PSE-001 through RF-PSE-006 |
 | GPS protocols, ingestion, and notifications | RF-GPS-001 through RF-GPS-010; RF-NOT-001 through RF-NOT-007 |
-| Transit | RF-TRA-001 through RF-TRA-015; HTTP routes currently require ADMIN |
+| Transit (external service) | RF-TRA-001 through RF-TRA-015; see the sibling `../../transit/README.md`. FiruApp authentication was not carried over |
 | Administration and static web client | RF-ADM-001 through RF-ADM-002; RF-WEB-001 through RF-WEB-011 |
 | Demonstration data | RF-DEM-001 through RF-DEM-003 |
 | Future or currently excluded capabilities | RF-FUT-001 through RF-FUT-008 |
 | Commercial and operational commitments | RF-COM-001 through RF-COM-003 |
 
-Sharing and temporary access introduce resource-specific permissions in addition to account roles. Group visibility can be PUBLIC or PRIVATE, while group chat has separate membership checks. Inactive private-group reentry remains an identified gap (B01) pending policy decision D01. See the catalogue for precise current behavior and other discrepancies.
+Sharing and temporary access introduce resource-specific permissions in addition to account roles. Group visibility can be PUBLIC or PRIVATE, while group chat has separate membership checks. A voluntary departure and a manager revocation are tracked separately: a revoked member must request reentry, and only the group creator can approve or reject that request. See the catalogue for precise current behavior and remaining verification gaps.
 
 ## 6. Non-Functional Requirements
 
@@ -196,11 +196,6 @@ erDiagram
 
     SEARCH_GROUP ||--o{ VOLUNTEER : includes
 
-    TRANSIT_VEHICLE ||--o{ TRANSIT_LOCATION : has
-    TRANSIT_VEHICLE ||--o{ TRANSIT_SCHEDULED_GEOFENCE : has
-    TRANSIT_VEHICLE ||--o{ TRANSIT_SEARCH_GROUP : has
-    TRANSIT_VEHICLE ||--o{ TRANSIT_GEOFENCE_EVENT : triggers
-    TRANSIT_SEARCH_GROUP ||--o{ TRANSIT_VOLUNTEER : includes
 ```
 
 ### Main Entities
@@ -219,12 +214,6 @@ erDiagram
 | `WalkMessage` | Chat message on a walk request |
 | `DogWalk` | Active or completed walk derived from request |
 | `DogWalkPosition` | Live position updates during dog walk |
-| `TransitVehicle` | Tracked vehicle in transit module |
-| `TransitLocation` | Vehicle location point |
-| `TransitScheduledGeofence` | Time-based vehicle zone rule |
-| `TransitGeofenceEvent` | Transit geofence violation event |
-| `TransitSearchGroup` | Transit incident search group |
-| `TransitVolunteer` | Transit volunteer membership |
 
 ## 11. Deployment Architecture
 
@@ -393,7 +382,9 @@ sequenceDiagram
 
 ### Public
 
-- `POST /api/auth/register`
+- `POST /api/auth/register` (creates an unverified account and sends a confirmation email)
+- `GET /api/auth/verify-email?token=...`
+- `POST /api/auth/resend-verification`
 - `POST /api/auth/login`
 - `GET /api/public/walkers`
 - `POST /api/walker-applications`
@@ -416,7 +407,10 @@ sequenceDiagram
 - `POST /api/search-groups`
 - `GET /api/search-groups`
 - `PUT /api/search-groups/{id}`
-- `POST /api/search-groups/{id}/join`
+- `POST /api/search-groups/{id}/join` (revoked members receive a pending rejoin request)
+- `GET /api/search-groups/{id}/rejoin-requests` (creator only)
+- `POST /api/search-groups/{id}/rejoin-requests/{requestId}/approve` (creator only)
+- `POST /api/search-groups/{id}/rejoin-requests/{requestId}/reject` (creator only)
 - `POST /api/search-groups/{id}/leave`
 - `GET /api/search-groups/{id}/volunteers`
 - `GET /api/search-groups/{id}/member-candidates?q={nameOrEmail}`
@@ -467,7 +461,7 @@ flowchart TD
 
 - `/api/auth/**`, `/api/public/**`, `/api/walker-applications`, static assets, and `/ws/**` are public.
 - `/api/admin/**` requires `ROLE_ADMIN`.
-- `/api/transit/**` requires `ROLE_ADMIN`.
+- Transit is a separate service. The sibling project README says FiruApp authentication has not been carried over, so this backend does not claim an ADMIN-only policy for Transit.
 - All other API routes require authentication.
 - Owner-scoped resources must validate owner/admin access in service/controller logic. Normal users are limited to their own pets, routes, geofences, walk requests/dog walks, and search groups (plus the lost-pet wall); admins can access the full scope.
 

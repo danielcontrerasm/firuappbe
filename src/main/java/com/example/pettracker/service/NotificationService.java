@@ -20,6 +20,9 @@ public class NotificationService {
     @Value("${notifications.email.from:}")
     private String emailFrom;
 
+    @Value("${spring.mail.username:}")
+    private String smtpUsername;
+
     private final JavaMailSender mailSender;
     private final SimpMessagingTemplate messagingTemplate;
     private final UserRepository userRepository;
@@ -58,26 +61,29 @@ public class NotificationService {
         }
     }
 
-    public void sendEmail(String to, String subject, String body) {
+    public boolean sendEmail(String to, String subject, String body) {
         try {
             if (!hasText(to) || !hasText(subject) || !hasText(body)) {
                 log.warn("Email skipped: destination, subject, or body missing");
-                return;
+                return false;
             }
             if (mailSender == null) {
                 log.warn("Email skipped for {}: Spring Mail is not configured", to);
-                return;
+                return false;
             }
             SimpleMailMessage m = new SimpleMailMessage();
             m.setTo(to);
             m.setSubject(subject);
             m.setText(body);
-            if (hasText(emailFrom)) {
-                m.setFrom(emailFrom);
+            String from = hasText(emailFrom) ? emailFrom : smtpUsername;
+            if (hasText(from)) {
+                m.setFrom(from);
             }
             mailSender.send(m);
+            return true;
         } catch (Exception e) {
             log.warn("Failed to send email to {}: {}", to, e.getMessage(), e);
+            return false;
         }
     }
     @Async("notificationExecutor")
