@@ -12,6 +12,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface PetRepository extends JpaRepository<Pet, Long> {
 
+    @Query("SELECT p.id AS id, p.name AS name, p.terminalId AS terminalId FROM Pet p WHERE p.terminalId IS NOT NULL AND p.terminalId <> ''")
+    List<TerminalPetLookup> findAllTerminalLookups();
+
+    interface TerminalPetLookup {
+        Long getId();
+        String getName();
+        String getTerminalId();
+    }
+
     long countByOwnerId(Long ownerId);
 
     @Override

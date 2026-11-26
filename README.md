@@ -27,15 +27,19 @@ Spring Kafka is included as an optional/scaffolded ingestion path, but the defau
 | Area | Current functionality | Main users |
 | --- | --- | --- |
 | Accounts | Registration, login, BCrypt password hashing, JWT sessions, role-based access | Owners, walkers, admins |
+| Plans and limits | BASIC, FAMILY, and PREMIUM; limits for history, sharing, geofences, and groups | Owners, admins |
 | Pet profiles | Pet CRUD, tracker/IMEI binding, profile images, active/lost/found status | Owners, admins |
-| Pet tracking | Latest location, history, bounded routes, date-range routes, neighborhood lookup, weekly walking distance | Owners, admins |
+| Pet sharing | Permanent sharing and temporary access with time and data permissions | Owners, caregivers, admins |
 | GPS devices | JT/T 808 and V41 decoding, ASCII bracket frames, Topin frames, device acknowledgements, terminal admission | Devices, admins |
+| Pet tracking | Latest location, history, bounded routes, date-range routes, neighborhood lookup, weekly walking distance | Owners, admins |
 | Geofences | Circular and polygon boundaries, immediate latest-location check, boundary alerts | Owners, admins |
 | Lost-pet community | Search groups, volunteer membership, lost-pet wall, redacted public group details | Owners, volunteers, admins |
+| Search group chat | Message history and posting for users with chat access | Owners, volunteers, admins |
 | Walker marketplace | Public walker wall, applications, approval, request, quote, decision, chat, active walk, GPS positions, completion | Owners, walkers, admins |
 | Notifications | In-app WebSocket alerts, email, SMS, optional WhatsApp | Owners, volunteers |
-| Transit tracking | Separate Spring Boot project in `../transit`; see its README for current scope and setup | Not served by this application |
 | Operations | HTTP, database, Hikari pool, and GPS ingestion metrics | Admins |
+| Demo data | Demo owner and walker accounts, synthetic pets and routes, and optional GPS simulation | Owners, walkers, admins |
+| Transit tracking | Separate Spring Boot project in `../transit`; see its README for current scope and setup | Not served by this application |
 
 ### Current FiruApp dashboard
 
@@ -53,30 +57,6 @@ The backend serves a responsive Spanish-language dashboard from `src/main/resour
 - Automatic inbox/map/alert refresh while a session is active.
 
 The static dashboard currently focuses on the marketplace workflow. Pet tracking, geofencing, and lost-pet capabilities are exposed by this application’s REST API and can also be consumed by a separate React client. Transit APIs belong to the sibling `../transit` service. A companion React frontend uses the marketplace APIs from its `/walks` route.
-
-## Demo accounts
-
-Demo walker data is enabled by default with `demo.walkers.enabled=true`. On application startup, the service idempotently creates the following accounts and profiles:
-
-| Role | Email | Password | Profile |
-| --- | --- | --- | --- |
-| Owner | `owner.demo@firuapp.local` | `FiruDemo123!` | Luna, Golden retriever |
-| Walker | `camila.walker@firuapp.local` | `FiruDemo123!` | Alto Prado, COP 45,000 base |
-| Walker | `mateo.walker@firuapp.local` | `FiruDemo123!` | Riomar, COP 52,000 base |
-| Walker | `sofia.walker@firuapp.local` | `FiruDemo123!` | El Prado, COP 40,000 base |
-
-To test the complete request flow:
-
-1. Open the app in a normal browser window and sign in as the demo owner.
-2. Choose a walker and create a walk request.
-3. Open an incognito/private window and sign in as that walker.
-4. Open the received request, quote or negotiate, and send a message.
-5. Return to the owner session to accept the proposal.
-6. Sign in as the walker again, start the walk, send browser GPS positions, and complete the walk.
-
-The dashboard stores its JWT in `localStorage`, so separate normal and incognito contexts are needed for owner/walker testing.
-
-There is a separate optional GPS demo for the configured `DEMO_ACCOUNT_EMAIL` (default `danico411@gmail.com`). When `DEMO_GPS_ENABLED=true`, a successful login seeds the synthetic pets Peluche, Bella, and Rocky with routes and the scheduled simulator publishes locations and demo geofence alerts.
 
 ## Architecture
 
@@ -167,7 +147,21 @@ Roles:
 - `WALKER`: receive and answer walk requests, chat, start walks, send positions, and complete walks.
 - `ADMIN`: walker administration, metrics, and full owner scope. Transit is a separate service and does not inherit FiruApp authentication.
 
+### Plans and limits
+
+The account plan controls history windows and limits for sharing, geofences, and search groups. See [plans and limits](docs/catalogo-requisitos.md#planes-y-límites).
+
+### Pet profiles and tracker setup
+
+Owners create a pet profile, list their accessible pets, and open the pet's details. They can bind a GPS tracker by recording its IMEI and terminal ID. See [pet profile and tracker requirements](docs/catalogo-requisitos.md#mascotas).
+
+### Permanent sharing and temporary access
+
+Owners can share a pet with an existing account or grant a caregiver access for a limited time. See [permanent sharing](docs/catalogo-requisitos.md#acceso-permanente-compartido) and [temporary access](docs/catalogo-requisitos.md#acceso-temporal-para-cuidadores).
+
 ### Pet location flow
+
+#### GPS device ingestion
 
 ```mermaid
 sequenceDiagram
@@ -189,18 +183,33 @@ sequenceDiagram
     Geo->>Notify: WebSocket/email/SMS/WhatsApp alert
 ```
 
+#### Locations, routes, and reports
+
 Tracker-originated updates are processed asynchronously so Netty event-loop threads do not block on database work. Manual `POST /api/pets/{id}/locations` updates use the same domain pipeline but are persisted synchronously for the API response.
 
 Location records can include latitude, longitude, app-local timestamp, battery percentage, and battery voltage. The default timezone is `America/Bogota`; tracker-specific JT/T 808 zones can be configured by terminal ID.
 
+Authorized users can view the latest location and query history and routes. History exports depend on permissions and plan limits. See [location and reporting requirements](docs/catalogo-requisitos.md#ubicaciones-e-informes).
+
 ### Geofence and lost-pet flow
+
+#### Geofences and alerts
 
 - An owner creates one circle or polygon geofence per pet.
 - The latest location is checked immediately when a new geofence is saved.
 - Subsequent locations are evaluated asynchronously.
 - Out-of-zone events create an `Alert`, notify the owner, publish a real-time alert, and notify active lost-pet volunteers.
+
+#### Lost pets and search groups
+
 - Marking a pet lost/found updates the pet state and integrates with the lost-pet notification flow.
 - Search groups coordinate volunteers around a pet and expose a redacted lost-pet wall to normal users.
+
+The steps to create a group, manage membership, and resolve rejoin requests are in the [search group requirements](docs/catalogo-requisitos.md#grupos-de-búsqueda).
+
+### Search group chat
+
+Users with chat access can read message history. Sending messages requires an active group. See [group chat requirements](docs/catalogo-requisitos.md#chat-de-búsqueda).
 
 ### Dog-walk marketplace flow
 
@@ -227,6 +236,18 @@ sequenceDiagram
 ```
 
 The request includes the pet, requested start time, duration, service address, notes, owner budget, and walker quote. Owners and walkers can chat inside a request. Walk positions are rendered as a Leaflet polyline, and the walker can submit browser geolocation while the walk is `IN_PROGRESS`.
+
+### Notifications
+
+Account, pet, and search group events use the [notification channels and integrations](#notifications-and-external-integrations).
+
+### Administration and dashboard
+
+Administrators can list users, change their plans, manage walker profiles, and monitor the service. See the [dashboard](#current-firuapp-dashboard) and [operational metrics](#admin-and-operational-metrics).
+
+### Demo data
+
+Try the marketplace and optional GPS simulation with the [demo accounts](#demo-accounts).
 
 ### Transit service boundary
 
@@ -448,6 +469,8 @@ The TCP listener detects protocols per connection and routes frames to the corre
 
 The device terminal identifier must match the pet's registered tracker identifier. For JT/T 808, the exact BCD terminal ID from the packet header, including leading zeros, is used. Legacy headers normally contain 12 digits and 2019 headers may contain 20; the terminal ID can differ from the printed IMEI. For Topin, use the 15-digit IMEI.
 
+GPS persistence runs asynchronously after protocol handling. JT808, Topin, and ASCII location acknowledgements follow persistence or deliberate validation rejection; failed writes or executor/queue rejection do not receive a positive location ACK, allowing devices to retry. Invalid fixes, out-of-range coordinates, stale/future points, and duplicate or out-of-order timestamps are deliberately rejected. The default freshness window accepts points up to 10 minutes old and 5 minutes in the future. Terminal IDs are warmed from PostgreSQL at startup. JT808 and Topin cold-cache lookups use a bounded asynchronous executor; Topin waits for the result before accepting login without blocking the Netty event loop. No Netty event loop queries PostgreSQL. Once identified as non-Topin, a GPS connection closes after 10 minutes without inbound data by default; tune `GPS_LISTENER_LEGACY_READ_IDLE_TIMEOUT_SECONDS` to match tracker heartbeat intervals. The optional in-memory queue drains for up to 30 seconds on graceful shutdown; abrupt process termination can still lose queued messages. See [GPS ingestion review](REVISION_FUNCIONALIDADES.md#revisión-ingesta-gps) and B16–B18 in the [requirements catalog](docs/catalogo-requisitos.md).
+
 JT/T 808 device clocks have no transmitted timezone. Configure terminal-specific zones under `gps.jt808.terminal-time-zones`. The observed HW10 terminal `014166272782` defaults to `UTC` through `GPS_HW10_TIME_ZONE`; other terminals default to `APP_TIME_ZONE`. Incoming device times are converted to an instant and stored using the application timezone. Logs containing `JT808 time terminalId=...` show the raw BCD time, configured zone, applied offset, decoded UTC, and server UTC.
 
 HW10/BSJ additional-info item `0xEB` supports nested records. Field `0x00A8` supplies battery percentage and `0x002D` supplies millivolts; valid values populate the location telemetry fields. Field `0x00D5` is decoded as diagnostic reported IMEI metadata and does not overwrite the registered terminal ID. The V41 `E1 01 XX` extension accepts one unsigned 0–100 percentage byte, including zero. Vendor-specific Wi-Fi/LBS layouts, heartbeat battery payloads, batch uploads, encrypted messages, and subpackage reassembly remain unsupported.
@@ -564,6 +587,14 @@ Spring values can be supplied through environment variables. The most important 
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | `validate` | Hibernate schema behavior |
 | `SERVER_PORT` | `8080` | HTTP port |
 | `GPS_LISTENER_PORT` | `5000` | GPS TCP port |
+| `GPS_LISTENER_SHUTDOWN_TIMEOUT_SECONDS` | `10` | Graceful close limit for GPS clients and Netty event loops |
+| `GPS_LISTENER_WORKER_THREADS` | `0` | Netty worker threads; `0` uses Netty's CPU-based default |
+| `GPS_LISTENER_LEGACY_READ_IDLE_TIMEOUT_SECONDS` | `600` | Close identified non-Topin GPS connections after this many idle seconds; `0` disables this timeout |
+| `GPS_INGESTION_MAX_POSITION_AGE` | `PT10M` | Maximum age accepted for a live GPS position |
+| `GPS_INGESTION_MAX_FUTURE_SKEW` | `PT5M` | Maximum accepted device timestamp ahead of server time |
+| `GPS_INGESTION_SHUTDOWN_TIMEOUT_SECONDS` | `30` | Graceful drain limit for the optional GPS message queue |
+| `GPS_LOOKUP_CORE_THREADS` / `GPS_LOOKUP_MAX_THREADS` | `2` / `4` | Bounded terminal-cache lookup executor |
+| `GPS_PET_CACHE_MAXIMUM_SIZE` | `100000` | Maximum warmed terminal identity cache entries |
 | `JWT_SECRET` | local fallback only | JWT signing secret; required in production |
 | `JWT_EXPIRATION_MS` | `86400000` | Token lifetime |
 | `APP_TIME_ZONE` | `America/Bogota` | Application timestamp timezone |
@@ -633,7 +664,31 @@ Production recommendations:
 - Hikari active, idle, total, maximum, and waiting connections.
 - GPS ingestion queue drops and optional message-queue depth.
 
-The service also uses bounded async executors for GPS ingestion, geofencing, alerts, and notifications. GPS queue overflow is counted rather than blocking Netty event loops.
+The service also uses bounded async executors for GPS ingestion, geofencing, alerts, and notifications. GPS counters report received, persisted, rejected, failed, and queue-dropped locations. A positive location ACK follows persistence or deliberate validation rejection; infrastructure failures withhold positive ACKs. Terminal cache misses use a bounded lookup executor instead of blocking Netty event loops.
+
+## Demo accounts
+
+Demo walker data is enabled by default with `demo.walkers.enabled=true`. On application startup, the service idempotently creates the following accounts and profiles:
+
+| Role | Email | Password | Profile |
+| --- | --- | --- | --- |
+| Owner | `owner.demo@firuapp.local` | `FiruDemo123!` | Luna, Golden retriever |
+| Walker | `camila.walker@firuapp.local` | `FiruDemo123!` | Alto Prado, COP 45,000 base |
+| Walker | `mateo.walker@firuapp.local` | `FiruDemo123!` | Riomar, COP 52,000 base |
+| Walker | `sofia.walker@firuapp.local` | `FiruDemo123!` | El Prado, COP 40,000 base |
+
+To test the complete request flow:
+
+1. Open the app in a normal browser window and sign in as the demo owner.
+2. Choose a walker and create a walk request.
+3. Open an incognito/private window and sign in as that walker.
+4. Open the received request, quote or negotiate, and send a message.
+5. Return to the owner session to accept the proposal.
+6. Sign in as the walker again, start the walk, send browser GPS positions, and complete the walk.
+
+The dashboard stores its JWT in `localStorage`, so separate normal and incognito contexts are needed for owner/walker testing.
+
+There is a separate optional GPS demo for the configured `DEMO_ACCOUNT_EMAIL` (default `danico411@gmail.com`). When `DEMO_GPS_ENABLED=true`, a successful login seeds the synthetic pets Peluche, Bella, and Rocky with routes and the scheduled simulator publishes locations and demo geofence alerts.
 
 ## Current limitations and roadmap
 
@@ -690,5 +745,6 @@ docs/
 - [Code review work plan by functionality](docs/plan-revision-codigo.md)
 - [Numbered functional and non-functional requirements](docs/catalogo-requisitos.md)
 - [HTTP API requirements traceability matrix](docs/matriz-trazabilidad-api.md)
+- [FiruApp feature mind map](docs/mapa-mental-funcionalidades.md)
 - [Extended FiruApp design document](docs/firuapp-design-document.md)
 - [FiruApp backend study guide](docs/firuapp-study-guide.md)

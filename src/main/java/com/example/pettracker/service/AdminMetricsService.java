@@ -51,6 +51,10 @@ public class AdminMetricsService {
                 databaseMetrics,
                 poolMetrics,
                 new GpsMetrics(
+                        gpsIngestionService.getReceivedLocations(),
+                        gpsIngestionService.getPersistedLocations(),
+                        gpsIngestionService.getRejectedLocations(),
+                        gpsIngestionService.getFailedTasks(),
                         gpsIngestionService.getDroppedTasks(),
                         gpsIngestionService.isMessageQueueEnabled(),
                         gpsIngestionService.getMessageQueueDepth(),

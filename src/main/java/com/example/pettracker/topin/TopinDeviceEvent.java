@@ -7,4 +7,20 @@ import java.time.Instant;
  * for a live location. Store receivedAt separately; never silently replace deviceTime.
  */
 public record TopinDeviceEvent(String imei, Instant receivedAt, TopinMessage message,
-                               boolean eligibleForLiveLocation, String qualityNote) { }
+                               boolean eligibleForLiveLocation, String qualityNote,
+                               byte[] acknowledgementAfterIngestion) {
+    public TopinDeviceEvent {
+        acknowledgementAfterIngestion = acknowledgementAfterIngestion == null
+                ? null : acknowledgementAfterIngestion.clone();
+    }
+
+    public TopinDeviceEvent(String imei, Instant receivedAt, TopinMessage message,
+                            boolean eligibleForLiveLocation, String qualityNote) {
+        this(imei, receivedAt, message, eligibleForLiveLocation, qualityNote, null);
+    }
+
+    @Override
+    public byte[] acknowledgementAfterIngestion() {
+        return acknowledgementAfterIngestion == null ? null : acknowledgementAfterIngestion.clone();
+    }
+}

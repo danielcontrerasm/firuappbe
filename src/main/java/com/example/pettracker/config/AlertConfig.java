@@ -21,6 +21,15 @@ public class AlertConfig {
     @Value("${gps.ingestion.queue-capacity:500}")
     private int gpsQueueCapacity;
 
+    @Value("${gps.lookup.core-threads:2}")
+    private int gpsLookupCoreThreads;
+
+    @Value("${gps.lookup.max-threads:4}")
+    private int gpsLookupMaxThreads;
+
+    @Value("${gps.lookup.queue-capacity:1000}")
+    private int gpsLookupQueueCapacity;
+
     @Bean("alertExecutor")
     public Executor alertExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -61,6 +70,22 @@ public class AlertConfig {
         executor.setQueueCapacity(gpsQueueCapacity);
         executor.setThreadNamePrefix("GpsIngest-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean("gpsTerminalLookupExecutor")
+    public Executor gpsTerminalLookupExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(gpsLookupCoreThreads);
+        executor.setMaxPoolSize(gpsLookupMaxThreads);
+        executor.setQueueCapacity(gpsLookupQueueCapacity);
+        executor.setThreadNamePrefix("GpsTerminalLookup-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
         executor.initialize();
         return executor;
     }

@@ -1031,6 +1031,8 @@ function renderAdminMetrics() {
         ["Transacciones", formatNumber(database.committedTransactions), `${formatNumber(database.rolledBackTransactions)} rollback`],
         ["Conexiones DB", formatNumber(database.openConnections), `${formatNumber(database.idleInTransactionConnections)} idle tx`],
         ["Pool Hikari", `${formatNumber(pool.activeConnections)}/${formatNumber(pool.maxPoolSize)}`, `${formatNumber(pool.threadsAwaitingConnection)} esperando`],
+        ["GPS recibidos", formatNumber(gps.receivedLocations), `${formatNumber(gps.persistedLocations)} persistidos · ${formatNumber(gps.rejectedLocations)} rechazados`],
+        ["GPS fallidos", formatNumber(gps.failedTasks), "errores o falta de capacidad; ACK positivo omitido"],
         ["GPS drops", formatNumber(gps.droppedTasks), "executor async"],
         ["GPS queue", gps.messageQueueEnabled ? "Activa" : "Inactiva", `${formatNumber(gps.messageQueueDepth)} pendientes · ${formatNumber(gps.droppedMessages)} drops`]
     ];
