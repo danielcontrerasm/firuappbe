@@ -22,6 +22,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -219,28 +222,32 @@ public class VolunteerNotificationService {
         if (pet == null || pet.getId() == null) {
             return;
         }
-        List<Volunteer> memberships = volunteerRepository
-                .findActiveMembersOfActiveGroupsByPetId(pet.getId());
-        if (memberships.isEmpty()) {
+        Map<Long, List<Volunteer>> membershipsByUser = volunteerRepository
+                .findActiveMembersOfActiveGroupsByPetId(pet.getId()).stream()
+                .filter(membership -> membership.getUser() != null && membership.getUser().getId() != null
+                        && membership.getSearchGroup() != null)
+                .collect(Collectors.groupingBy(membership -> membership.getUser().getId()));
+        if (membershipsByUser.isEmpty()) {
             log.debug("No active group members to notify for pet {}", pet.getId());
             return;
         }
 
         String petName = pet.getName() == null || pet.getName().isBlank() ? "your pet" : pet.getName();
-        String eventMessage = "LOST".equalsIgnoreCase(alertType)
+        boolean lost = "LOST".equalsIgnoreCase(alertType);
+        String eventMessage = lost
                 ? petName + " has been marked as lost. Please open FiruApp to coordinate with your group."
                 : petName + " triggered a geofence alert. Please open FiruApp to coordinate with your group.";
+        String subject = (lost ? "Lost pet update: " : "Geofence alert: ") + petName;
 
-        for (Volunteer membership : memberships) {
-            var user = membership.getUser();
-            SearchGroup group = membership.getSearchGroup();
-            if (user == null || group == null) {
-                continue;
-            }
-            String message = "Group '" + group.getGroupName() + "': " + eventMessage;
-            String subject = "LOST".equalsIgnoreCase(alertType)
-                    ? "Lost pet update: " + petName
-                    : "Geofence alert: " + petName;
+        for (List<Volunteer> memberships : membershipsByUser.values()) {
+            User user = memberships.getFirst().getUser();
+            List<String> groupNames = memberships.stream()
+                    .map(membership -> Objects.toString(membership.getSearchGroup().getGroupName(), "Search group"))
+                    .distinct()
+                    .sorted()
+                    .toList();
+            String groups = (groupNames.size() == 1 ? "Group '" : "Groups '") + String.join("', '", groupNames) + "'";
+            String message = groups + ": " + eventMessage;
             try {
                 if (user.getEmail() != null && !user.getEmail().isBlank()) {
                     notificationService.sendEmail(user.getEmail(), subject, message);
@@ -249,10 +256,10 @@ public class VolunteerNotificationService {
                     notificationService.sendPhoneNotification(user.getPhone(), message);
                 }
             } catch (Exception exception) {
-                log.warn("Could not notify member userId={} searchGroupId={}",
-                        user.getId(), group.getId(), exception);
+                log.warn("Could not notify group member userId={} petId={}", user.getId(), pet.getId(), exception);
             }
         }
-        log.info("Notified {} active group memberships for pet {} after {}", memberships.size(), pet.getId(), alertType);
+        log.info("Processed {} group notification recipients for pet {} after {}",
+                membershipsByUser.size(), pet.getId(), alertType);
     }
 }

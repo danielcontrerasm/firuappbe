@@ -9,5 +9,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface SearchGroupMessageRepository extends JpaRepository<SearchGroupMessage, Long> {
 
     @EntityGraph(attributePaths = {"searchGroup", "sender"})
-    List<SearchGroupMessage> findBySearchGroupIdOrderByCreatedAtAsc(Long searchGroupId, Pageable pageable);
+    List<SearchGroupMessage> findBySearchGroupIdOrderByCreatedAtAscIdAsc(Long searchGroupId, Pageable pageable);
 }

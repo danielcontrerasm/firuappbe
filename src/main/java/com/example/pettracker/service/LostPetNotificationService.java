@@ -18,39 +18,20 @@ public class LostPetNotificationService {
     private final PetRepository petRepository;
     private final VolunteerNotificationService volunteerNotificationService;
 
-    /**
-     * Sends notifications to pet owner when their pet is marked as lost
-     */
+    /** Sends notifications to the owner and active search groups when a pet is marked as lost. */
     @Transactional(readOnly = true)
     public void notifyPetLost(Long petId) {
         Pet pet = loadPet(petId);
-        log.info("Entered notifyPetLost in lostPetNotificationService with petId: {}", pet.getId());
-
-
         if (pet == null || pet.getOwner() == null) {
-            log.warn("Invalid pet or owner for lost pet notification");
+            log.warn("Invalid pet or owner for lost pet notification, petId={}", petId);
             return;
         }
 
         User owner = pet.getOwner();
         String petName = pet.getName() != null ? pet.getName() : "Your pet";
         String petType = pet.getType() != null ? pet.getType() : "pet";
-        String additionalInfo = "Pet ID: " + pet.getId();
-        log.info("before notificationService.notifyOwner in lostPetNotificationService with petId: {}", pet.getId());
-        log.info("owner is notificationService.notifyOwner : {}", owner.getName());
-         
-        notificationService.notifyOwner(pet.getOwner(),
-                "Alert: Your pet " +
-                        petName  +
-                        "left home ");
-        notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche necesita tu ayuda. Revisa su ubicacion en la app.");
-        notificationService.notifyOwner(pet.getOwner(),"FiruApp: Peluche salio de su zona segura. Revisa su ubicacion en la app");
-
+        notificationService.notifyLostPet(owner, petName, petType, "Pet ID: " + pet.getId());
         volunteerNotificationService.notifyPetGroupMembers(pet, "LOST");
-
-        log.info("Next commented method call would be notifyLostPet with parameters - owner: {}, petName: {}, petType: {}, additionalInfo: {}", owner.getName(), petName, petType, additionalInfo);
-        // notificationService.notifyLostPet(owner, petName, petType, additionalInfo);
-        log.info("Lost pet notification queued for owner {} and pet {}", owner.getId(), pet.getId());
     }
 
     /**

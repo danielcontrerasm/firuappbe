@@ -10,6 +10,7 @@ import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.User;
 import com.example.pettracker.mapper.PetMapper;
 import com.example.pettracker.repository.PetRepository;
+import com.example.pettracker.repository.SearchGroupRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -53,6 +55,7 @@ public class PetService {
     private final PetMapper petMapper;
     private final ImageUploadLimits imageUploadLimits;
     private final PetAccessService petAccessService;
+    private final SearchGroupRepository searchGroupRepository;
     @Autowired
     private LostPetNotificationService lostPetNotificationService;
 
@@ -66,7 +69,8 @@ public class PetService {
             PetWalkDistanceService petWalkDistanceService,
             PetMapper petMapper,
             ImageUploadLimits imageUploadLimits,
-            PetAccessService petAccessService) {
+            PetAccessService petAccessService,
+            SearchGroupRepository searchGroupRepository) {
         this.petRepository = petRepository;
         this.gpsIngestionService = gpsIngestionService;
         this.currentUserService = currentUserService;
@@ -76,6 +80,7 @@ public class PetService {
         this.petMapper = petMapper;
         this.imageUploadLimits = imageUploadLimits;
         this.petAccessService = petAccessService;
+        this.searchGroupRepository = searchGroupRepository;
     }
 
     /** Backward-compatible constructor used by lightweight unit tests. */
@@ -88,15 +93,8 @@ public class PetService {
             PetWalkDistanceService petWalkDistanceService,
             PetMapper petMapper,
             ImageUploadLimits imageUploadLimits) {
-        this.petRepository = petRepository;
-        this.gpsIngestionService = gpsIngestionService;
-        this.currentUserService = currentUserService;
-        this.userService = userService;
-        this.locationService = locationService;
-        this.petWalkDistanceService = petWalkDistanceService;
-        this.petMapper = petMapper;
-        this.imageUploadLimits = imageUploadLimits;
-        this.petAccessService = null;
+        this(petRepository, gpsIngestionService, currentUserService, userService, locationService,
+                petWalkDistanceService, petMapper, imageUploadLimits, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -589,9 +587,19 @@ public class PetService {
         }
     }
 
+    @Transactional
     public void delete(Long id) {
+        if (searchGroupRepository != null && searchGroupRepository.existsByPetId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot delete a pet with search groups");
+        }
         Pet pet = petRepository.findById(id).orElse(null);
-        petRepository.deleteById(id);
+        try {
+            petRepository.deleteById(id);
+            petRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot delete a pet with related records", exception);
+        }
         if (pet != null) {
             gpsIngestionService.evictPetCache(pet.getTerminalId());
         }

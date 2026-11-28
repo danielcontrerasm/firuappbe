@@ -359,6 +359,7 @@ curl -X POST http://localhost:8080/api/search-groups \
 | `GET` | `/api/search-groups` | List visible groups; supports pagination |
 | `GET` | `/api/search-groups/{id}` | Read one visible group |
 | `GET` | `/api/search-groups/my` | List groups for the current user |
+| `GET` | `/api/search-groups/my/rejoin-options` | List the current user's reentry options for active groups |
 | `GET` | `/api/search-groups/pet/{petId}` | List groups for a pet |
 | `PUT` | `/api/search-groups/{id}` | Update a group |
 | `POST` | `/api/search-groups/{id}/close` | Close a group (creator only); history remains accessible to members |
@@ -391,14 +392,18 @@ Trying to rejoin creates one pending request and notifies the group creator;
 only that creator can approve or reject it, regardless of group visibility.
 Repeated attempts reuse the existing pending request. Unknown users cannot join
 private groups by guessing an ID. The optional WhatsApp invitation remains
-external: joining WhatsApp does not change FiruApp membership. The request flow
-starts when the member uses FiruApp's join endpoint or button.
+external: joining WhatsApp does not change FiruApp membership. The web app
+shows eligible former memberships under **Reingreso a grupos**. The paginated
+rejoin-options endpoint returns only `groupId`, `groupName`, and `pendingRequestId`
+for the caller's own revoked memberships in active groups. Submit a request
+through the regular join endpoint when `pendingRequestId` is null.
 The creator remains an active member and cannot leave or be removed. Membership
 changes are serialized by group, and the database enforces one membership row
 per user and group. Existing duplicate rows are consolidated during schema
 initialization, preferring an active row and then the most recent join. Existing
 inactive memberships are treated as revoked during the first schema upgrade so
 previous removals cannot bypass the creator's rejoin-request decision.
+The schema upgrade restores active membership for existing group creators.
 
 Groups are created with `ACTIVE` status. Only the creator can close or reopen
 one through `POST /api/search-groups/{id}/close` or by updating its status to

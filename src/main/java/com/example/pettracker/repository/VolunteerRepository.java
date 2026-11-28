@@ -7,12 +7,31 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
 public interface VolunteerRepository extends JpaRepository<Volunteer, Long> {
 
     Volunteer findByUserIdAndSearchGroupId(Long userId, Long searchGroupId);
+
+    List<Volunteer> findByUserIdAndSearchGroupIdIn(Long userId, Collection<Long> searchGroupIds);
+
+    List<Volunteer> findBySearchGroupIdInAndActiveTrueOrderByJoinedAtAsc(Collection<Long> searchGroupIds);
+
+    @Query("""
+            SELECT v.searchGroup.id AS groupId, COUNT(v) AS memberCount
+            FROM Volunteer v
+            WHERE v.searchGroup.id IN :groupIds AND v.active = true
+            GROUP BY v.searchGroup.id
+            """)
+    List<ActiveMemberCount> findActiveMemberCounts(@Param("groupIds") Collection<Long> groupIds);
+
+    interface ActiveMemberCount {
+        Long getGroupId();
+
+        Long getMemberCount();
+    }
 
     List<Volunteer> findBySearchGroupIdAndActiveTrue(Long searchGroupId);
 

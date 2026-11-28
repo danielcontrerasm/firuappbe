@@ -1,3 +1,5 @@
+const SEARCH_GROUP_PAGE_SIZE = 50;
+
 const state = {
     token: localStorage.getItem("pettrackerToken") || "",
     me: null,
@@ -8,6 +10,9 @@ const state = {
     requests: [],
     dogWalks: [],
     searchGroups: [],
+    searchGroupPage: 0,
+    rejoinOptions: [],
+    rejoinOptionsPage: 0,
     adminMetrics: null,
     selectedRequest: null,
     selectedWalk: null,
@@ -28,6 +33,7 @@ const el = {
     alertsPanel: document.getElementById("alertsPanel"),
     alertsList: document.getElementById("alertsList"),
     searchGroupsList: document.getElementById("searchGroupsList"),
+    rejoinOptionsList: document.getElementById("rejoinOptionsList"),
     dashboardGreeting: document.getElementById("dashboardGreeting"),
     dashboardSubtitle: document.getElementById("dashboardSubtitle"),
     dashboardRole: document.getElementById("dashboardRole"),
@@ -92,7 +98,8 @@ document.getElementById("refreshMapBtn").addEventListener("click", refreshSelect
 document.getElementById("sendMyPositionBtn").addEventListener("click", sendCurrentPosition);
 document.getElementById("completeWalkBtn").addEventListener("click", completeSelectedWalk);
 document.getElementById("alertsList").addEventListener("click", dismissAlert);
-document.getElementById("searchGroupsList").addEventListener("click", joinSearchGroup);
+document.getElementById("searchGroupsPanel").addEventListener("click", handleSearchGroupClick);
+document.getElementById("searchGroupsList").addEventListener("submit", handleSearchGroupForm);
 document.getElementById("petsList").addEventListener("click", exportPetHistory);
 document.querySelectorAll("[data-demo-email]").forEach((button) => {
     button.addEventListener("click", () => fillDemoLogin(button.dataset.demoEmail));
@@ -124,6 +131,9 @@ async function bootstrap() {
 
 async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
+    if (!headers.has("Accept")) {
+        headers.set("Accept", "application/json");
+    }
     if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
         headers.set("Content-Type", "application/json");
     }
@@ -155,6 +165,9 @@ function logout() {
     state.petWalkDistancesByPetId = {};
     state.alerts = [];
     state.searchGroups = [];
+    state.searchGroupPage = 0;
+    state.rejoinOptions = [];
+    state.rejoinOptionsPage = 0;
     state.requests = [];
     state.dogWalks = [];
     state.selectedRequest = null;
@@ -272,9 +285,25 @@ async function loadAlerts() {
     renderAlerts();
 }
 
-async function loadSearchGroups() {
-    state.searchGroups = await api("/api/search-groups");
+async function loadSearchGroups(groupPage = state.searchGroupPage, rejoinPage = state.rejoinOptionsPage) {
+    const token = state.token;
+    const [groups, rejoinOptions] = await Promise.all([
+        loadSearchGroupPage("/api/search-groups", groupPage),
+        loadSearchGroupPage("/api/search-groups/my/rejoin-options", rejoinPage)
+    ]);
+    if (state.token !== token) return;
+    state.searchGroups = groups.items;
+    state.searchGroupPage = groups.page;
+    state.rejoinOptions = rejoinOptions.items;
+    state.rejoinOptionsPage = rejoinOptions.page;
     renderSearchGroups();
+}
+
+async function loadSearchGroupPage(path, page) {
+    const items = await api(`${path}?page=${page}&size=${SEARCH_GROUP_PAGE_SIZE}`);
+    if (items.length || page === 0) return { items, page };
+    const previousPage = page - 1;
+    return { items: await api(`${path}?page=${previousPage}&size=${SEARCH_GROUP_PAGE_SIZE}`), page: previousPage };
 }
 
 async function refreshSearchGroups() {
@@ -289,8 +318,25 @@ async function refreshSearchGroups() {
     }
 }
 
-// REVIEWED
-async function joinSearchGroup(event) {
+async function handleSearchGroupClick(event) {
+    const pageButton = event.target.closest("[data-search-group-page]");
+    if (pageButton) {
+        pageButton.disabled = true;
+        try {
+            const page = Number(pageButton.dataset.searchGroupPage);
+            if (pageButton.dataset.rejoinPage !== undefined) {
+                await loadSearchGroups(state.searchGroupPage, page);
+            } else {
+                await loadSearchGroups(page);
+            }
+        } catch (error) {
+            toast(error.message);
+        } finally {
+            pageButton.disabled = false;
+        }
+        return;
+    }
+
     const decisionButton = event.target.closest("[data-rejoin-request-action]");
     if (decisionButton) {
         const { groupId, requestId, rejoinRequestAction: action } = decisionButton.dataset;
@@ -301,8 +347,8 @@ async function joinSearchGroup(event) {
                 method: "POST"
             });
             toast(action === "approve" ? "Solicitud aprobada. El miembro volvió al grupo." : "Solicitud rechazada.");
-            await loadPendingRejoinRequests(groupId);
             await loadSearchGroups();
+            await loadPendingRejoinRequests(groupId);
         } catch (error) {
             decisionButton.disabled = false;
             toast(error.message);
@@ -323,49 +369,149 @@ async function joinSearchGroup(event) {
         return;
     }
 
-    const closeButton = event.target.closest("[data-close-search-group]");
-    if (closeButton) {
-        const groupId = closeButton.dataset.closeSearchGroup;
-        if (!window.confirm("¿Cerrar este grupo? Ya no se podrán unir voluntarios ni enviar mensajes.")) return;
-        try {
-            await api(`/api/search-groups/${groupId}/close`, { method: "POST" });
-            toast("Grupo cerrado. El historial se conserva.");
-            await loadSearchGroups();
-        } catch (error) {
-            toast(error.message);
-        }
-        return;
-    }
-    const button = event.target.closest("[data-join-search-group]");
-    if (!button) {
-        return;
-    }
-
+    const button = event.target.closest("[data-group-action]");
+    if (!button) return;
+    const { groupId, groupAction } = button.dataset;
     button.disabled = true;
     try {
-        const response = await api(`/api/search-groups/${button.dataset.joinSearchGroup}/join`, {
-            method: "POST"
-        });
-        toast(response.message || "Respuesta recibida del grupo.");
-        await loadSearchGroups();
+        const path = `/api/search-groups/${groupId}`;
+        if (groupAction === "chat") {
+            await loadGroupChat(groupId, Number(button.dataset.messagePage || 0));
+        } else if (groupAction === "roster") {
+            await loadGroupRoster(groupId, Number(button.dataset.rosterPage || 0));
+        } else {
+            if (groupAction === "close"
+                    && !window.confirm("¿Cerrar este grupo? Ya no se podrán unir voluntarios ni enviar mensajes.")) return;
+            if (groupAction === "leave" && !window.confirm("¿Salir de este grupo?")) return;
+            if (groupAction === "remove-member"
+                    && !window.confirm("¿Retirar a este voluntario del grupo?")) return;
+            const response = await applyGroupAction(path, groupAction, button.dataset.userId);
+            toast(response?.message || {
+                close: "Grupo cerrado. El historial se conserva.",
+                reopen: "Grupo reabierto.",
+                leave: "Saliste del grupo.",
+                "remove-member": "Voluntario retirado.",
+                join: "Solicitud procesada."
+            }[groupAction]);
+            await loadSearchGroups();
+            if (groupAction === "remove-member") await loadGroupRoster(groupId);
+        }
     } catch (error) {
-        button.disabled = false;
         toast(error.message);
+    } finally {
+        button.disabled = false;
     }
 }
 
-// REVIEWED
+async function applyGroupAction(path, action, userId) {
+    if (action === "reopen") {
+        return api(path, { method: "PUT", body: JSON.stringify({ status: "ACTIVE" }) });
+    }
+    if (action === "remove-member") {
+        return api(`${path}/volunteers/${userId}`, { method: "DELETE" });
+    }
+    return api(`${path}/${action}`, { method: "POST" });
+}
+
+async function handleSearchGroupForm(event) {
+    const form = event.target.closest("[data-group-form]");
+    if (!form) return;
+    event.preventDefault();
+    const { groupId, groupForm } = form.dataset;
+    const path = `/api/search-groups/${groupId}`;
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit.disabled) return;
+    const payload = formToObject(form);
+    submit.disabled = true;
+    try {
+        if (groupForm === "message") {
+            await api(`${path}/messages`, { method: "POST", body: JSON.stringify(payload) });
+            form.reset();
+            toast("Mensaje enviado.");
+            await loadGroupChat(groupId, Number(form.dataset.messagePage));
+        } else if (groupForm === "member") {
+            await api(`${path}/volunteers/${encodeURIComponent(payload.userId)}`, { method: "POST" });
+            form.reset();
+            toast("Voluntario agregado.");
+            await loadSearchGroups();
+            await loadGroupRoster(groupId);
+        } else if (groupForm === "candidates") {
+            const candidates = await api(`${path}/member-candidates?q=${encodeURIComponent(payload.q)}`);
+            const results = form.querySelector("[data-candidate-results]");
+            results.replaceChildren(...candidates.map((user) => {
+                const match = document.createElement("li");
+                match.textContent = `#${user.id} · ${user.name} · ${user.email}`;
+                return match;
+            }));
+            form.querySelector("[data-no-candidates]").hidden = candidates.length > 0;
+        } else if (groupForm === "edit") {
+            await api(path, { method: "PUT", body: JSON.stringify(payload) });
+            toast("Grupo actualizado.");
+            await loadSearchGroups();
+        }
+    } catch (error) {
+        toast(error.message);
+    } finally {
+        submit.disabled = false;
+    }
+}
+
+async function loadGroupChat(groupId, page) {
+    const messages = await api(`/api/search-groups/${groupId}/messages?page=${page}&size=${SEARCH_GROUP_PAGE_SIZE}`);
+    const container = el.searchGroupsList.querySelector(`[data-group-chat="${groupId}"]`);
+    if (!container) return;
+    const group = state.searchGroups.find((entry) => String(entry.id) === groupId);
+    container.innerHTML = `
+        <div class="list-stack">
+            ${messages.map((message) => `<article class="list-item">
+                <strong>${escapeHtml(message.senderName || "Voluntario")}</strong>
+                <small>${escapeHtml(formatDateTime(message.createdAt))}</small>
+                <p>${escapeHtml(message.body)}</p>
+            </article>`).join("") || '<p class="muted">No hay mensajes en esta página.</p>'}
+        </div>
+        ${renderGroupPagination(page, messages.length, `data-group-id="${groupId}" data-group-action="chat" data-message-page`)}
+        ${isActiveSearchGroup(group) ? `<form class="stack-form compact" data-group-form="message"
+                data-group-id="${groupId}" data-message-page="${page}">
+            <textarea name="body" aria-label="Mensaje" maxlength="2000" required></textarea>
+            <button type="submit">Enviar mensaje</button>
+        </form>` : ""}
+    `;
+}
+
+async function loadGroupRoster(groupId, page = 0) {
+    const group = state.searchGroups.find((entry) => String(entry.id) === groupId);
+    const container = el.searchGroupsList.querySelector(`[data-group-roster="${groupId}"]`);
+    if (!container || !group?.canViewRoster) return;
+    const members = await api(`/api/search-groups/${groupId}/volunteers?page=${page}&size=${SEARCH_GROUP_PAGE_SIZE}`);
+    container.innerHTML = `
+        <div class="list-stack">
+            ${members.map((member) => `<article class="list-item">
+                <strong>${escapeHtml(member.userName || "Voluntario")} · #${member.userId}</strong>
+                ${group.canManageMembers && !(group.canClose && member.userId === state.me?.id)
+                        && member.userId !== group.createdById
+                    ? `<button type="button" class="ghost-button" data-group-id="${groupId}"
+                        data-group-action="remove-member" data-user-id="${member.userId}">Retirar</button>`
+                    : ""}
+            </article>`).join("") || '<p class="muted">No hay voluntarios en esta página.</p>'}
+        </div>
+        ${renderGroupPagination(page, members.length, `data-group-id="${groupId}" data-group-action="roster" data-roster-page`)}
+    `;
+}
+
 async function loadPendingRejoinRequests(groupId) {
     const requests = await api(`/api/search-groups/${groupId}/rejoin-requests`);
     const container = el.searchGroupsList.querySelector(`[data-rejoin-request-list="${groupId}"]`);
     if (!container) return;
+    const group = state.searchGroups.find((entry) => String(entry.id) === groupId);
     container.innerHTML = requests.length
         ? requests.map((request) => `
             <article class="list-item">
                 <strong>${escapeHtml(request.volunteerName || "Voluntario")}</strong>
                 <p>Solicita volver al grupo · ${escapeHtml(formatDateTime(request.createdAt))}</p>
-                <button type="button" class="icon-button" data-group-id="${groupId}"
-                    data-request-id="${request.id}" data-rejoin-request-action="approve">Aprobar</button>
+                ${isActiveSearchGroup(group)
+                    ? `<button type="button" class="icon-button" data-group-id="${groupId}"
+                        data-request-id="${request.id}" data-rejoin-request-action="approve">Aprobar</button>`
+                    : ""}
                 <button type="button" class="ghost-button" data-group-id="${groupId}"
                     data-request-id="${request.id}" data-rejoin-request-action="reject">Rechazar</button>
             </article>
@@ -507,16 +653,25 @@ async function sharePet(event) {
 
 async function createSearchGroup(event) {
     event.preventDefault();
-    const payload = formToObject(event.currentTarget);
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit.disabled) return;
+    const payload = formToObject(form);
     payload.petId = Number(payload.petId);
-    payload.status = "active";
+    submit.disabled = true;
     try {
         await api("/api/search-groups", { method: "POST", body: JSON.stringify(payload) });
-        event.currentTarget.reset();
+        form.reset();
         toast(payload.visibility === "PUBLIC" ? "Grupo público creado: cualquiera puede verlo y unirse." : "Grupo privado creado.");
-        await loadSearchGroups();
+        try {
+            await loadSearchGroups(0);
+        } catch (error) {
+            toast("Grupo creado. No se pudo actualizar la lista.");
+        }
     } catch (error) {
         toast(error.message);
+    } finally {
+        submit.disabled = false;
     }
 }
 
@@ -828,26 +983,18 @@ function renderSearchGroups() {
     }
     if (!state.me) {
         el.searchGroupsList.innerHTML = `<div class="empty-state">Inicia sesión para ver y apoyar grupos de búsqueda.</div>`;
-        return;
-    }
-    if (!state.searchGroups.length) {
-        el.searchGroupsList.innerHTML = `<div class="empty-state">No hay grupos de búsqueda visibles.</div>`;
+        el.rejoinOptionsList.innerHTML = "";
         return;
     }
 
-    el.searchGroupsList.innerHTML = state.searchGroups.map((group) => `
+    const cards = state.searchGroups.map((group) => `
         <article class="list-item search-group-card">
-            <div class="search-banner">
-                <span class="search-banner-label">GRUPO DE VOLUNTARIOS</span>
-                <strong>${escapeHtml(group.petName || "Mascota")}</strong>
-                <span>Foto #${escapeHtml(String(group.petId || "—"))}</span>
-            </div>
             <header>
                 <div>
                     <strong>${escapeHtml(group.groupName || "Grupo de búsqueda")}</strong>
                     <div class="muted">${escapeHtml(group.petName || "Mascota sin nombre")}</div>
                 </div>
-                <span class="tag ${String(group.status || "").toUpperCase() === "ACTIVE" ? "ok" : "warn"}">
+                <span class="tag ${isActiveSearchGroup(group) ? "ok" : "warn"}">
                     ${escapeHtml(group.status || "Sin estado")}
                 </span>
             </header>
@@ -859,18 +1006,94 @@ function renderSearchGroups() {
                 <span>${escapeHtml([group.area, group.city].filter(Boolean).join(" · ") || "Zona sin definir")}</span>
                 <span>${formatNumber(group.membersCount || 0)} voluntario(s)</span>
             </div>
-            ${String(group.status || "").toUpperCase() === "ACTIVE"
-                ? `<button type="button" class="icon-button" data-join-search-group="${group.id}">Unirme al grupo</button>`
-                : `<p class="muted">Grupo cerrado. El historial sigue disponible para sus miembros.</p>`}
-            ${group.canClose && String(group.status || "").toUpperCase() === "ACTIVE"
-                ? `<button type="button" class="ghost-button" data-close-search-group="${group.id}">Cerrar grupo</button>`
-                : ""}
+            ${!isActiveSearchGroup(group) ? '<p class="muted">Grupo cerrado.</p>' : ""}
+            <div class="meta-line">
+                ${isActiveSearchGroup(group) && !group.activeMember && !group.revokedMember
+                    && (group.visibility === "PUBLIC" || group.canManageMembers)
+                    ? groupActionButton(group.id, "join", "Unirme al grupo") : ""}
+                ${group.activeMember && !group.canClose
+                    ? groupActionButton(group.id, "leave", "Salir del grupo") : ""}
+                ${group.canClose ? (isActiveSearchGroup(group)
+                    ? groupActionButton(group.id, "close", "Cerrar grupo")
+                    : groupActionButton(group.id, "reopen", "Reabrir grupo")) : ""}
+                ${group.activeMember || group.canManageMembers
+                    ? groupActionButton(group.id, "chat", isActiveSearchGroup(group) ? "Ver chat" : "Ver historial") : ""}
+                ${group.canViewRoster ? groupActionButton(group.id, "roster", "Ver voluntarios") : ""}
+                ${group.canClose
+                    ? `<button type="button" class="icon-button" data-show-rejoin-requests="${group.id}">Solicitudes de reingreso</button>`
+                    : ""}
+            </div>
+            ${group.activeMember || group.canManageMembers ? `<div data-group-chat="${group.id}"></div>` : ""}
+            ${group.canViewRoster ? `<div data-group-roster="${group.id}"></div>` : ""}
             ${group.canClose
-                ? `<button type="button" class="icon-button" data-show-rejoin-requests="${group.id}">Solicitudes de reingreso</button>
-                    <div data-rejoin-request-list="${group.id}"></div>`
-                : ""}
+                ? `<div data-rejoin-request-list="${group.id}"></div>` : ""}
+            ${group.canManageMembers ? renderGroupManagement(group) : ""}
         </article>
     `).join("");
+    el.searchGroupsList.innerHTML = (cards || '<div class="empty-state">No hay grupos de búsqueda visibles.</div>')
+        + renderGroupPagination(state.searchGroupPage, state.searchGroups.length, "data-search-group-page");
+
+    const options = state.rejoinOptions.map(({ groupId, groupName, pendingRequestId }) => `
+        <article class="list-item">
+            <strong>${escapeHtml(groupName)}</strong>
+            ${pendingRequestId
+                ? '<span class="muted">Solicitud pendiente de revisión.</span>'
+                : groupActionButton(groupId, "join", "Solicitar reingreso")}
+        </article>
+    `).join("");
+    el.rejoinOptionsList.innerHTML = (options || state.rejoinOptionsPage > 0)
+        ? '<h4>Reingreso a grupos</h4>' + options
+            + renderGroupPagination(state.rejoinOptionsPage, state.rejoinOptions.length, "data-rejoin-page data-search-group-page")
+        : "";
+}
+
+function isActiveSearchGroup(group) {
+    return group?.status?.toUpperCase() === "ACTIVE";
+}
+
+function groupActionButton(groupId, action, label) {
+    return `<button type="button" class="icon-button" data-group-action="${action}" data-group-id="${groupId}">${label}</button>`;
+}
+
+function renderGroupPagination(page, itemCount, pageAttribute) {
+    const hasNext = itemCount === SEARCH_GROUP_PAGE_SIZE;
+    if (!page && !hasNext) return "";
+    return `<div class="meta-line">
+        ${page > 0 ? `<button type="button" class="ghost-button" ${pageAttribute}="${page - 1}">Anterior</button>` : ""}
+        ${hasNext ? `<button type="button" class="ghost-button" ${pageAttribute}="${page + 1}">Siguiente</button>` : ""}
+    </div>`;
+}
+
+function renderGroupManagement(group) {
+    return `
+        <details>
+            <summary>Editar grupo</summary>
+            <form class="stack-form compact" data-group-form="edit" data-group-id="${group.id}">
+                <label>Nombre <input name="groupName" maxlength="255" value="${escapeHtml(group.groupName || "")}" required></label>
+                <label>Visibilidad <select name="visibility">
+                    <option value="PRIVATE" ${group.visibility === "PRIVATE" ? "selected" : ""}>Privado</option>
+                    <option value="PUBLIC" ${group.visibility === "PUBLIC" ? "selected" : ""}>Público</option>
+                </select></label>
+                <label>Descripción <textarea name="description" maxlength="1000">${escapeHtml(group.description || "")}</textarea></label>
+                <label>Zona <input name="area" maxlength="255" value="${escapeHtml(group.area || "")}"></label>
+                <label>Ciudad <input name="city" maxlength="255" value="${escapeHtml(group.city || "")}"></label>
+                <button type="submit">Guardar cambios</button>
+            </form>
+        </details>
+        ${isActiveSearchGroup(group) ? `<details>
+            <summary>Agregar voluntarios</summary>
+            ${state.me.role === "ADMIN" ? `<form class="stack-form compact" data-group-form="candidates" data-group-id="${group.id}">
+                <label>Nombre o correo <input type="search" name="q" minlength="2" maxlength="100" required></label>
+                <button type="submit">Buscar candidatos</button>
+                <ul data-candidate-results></ul>
+                <p data-no-candidates hidden>No se encontraron candidatos.</p>
+            </form>` : ""}
+            <form class="stack-form compact" data-group-form="member" data-group-id="${group.id}">
+                <label>ID de usuario <input name="userId" inputmode="numeric" pattern="[1-9][0-9]*" required></label>
+                <button type="submit">Agregar voluntario</button>
+            </form>
+        </details>` : ""}
+    `;
 }
 
 function renderPets() {

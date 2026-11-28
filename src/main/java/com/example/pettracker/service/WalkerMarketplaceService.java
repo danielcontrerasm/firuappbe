@@ -34,11 +34,14 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -211,8 +214,14 @@ public class WalkerMarketplaceService {
 
     public void deleteWalkerByAdmin(Long profileId) {
         DogWalkerProfile profile = findWalkerProfile(profileId);
-        dogWalkerProfileRepository.delete(profile);
-        userRepository.delete(profile.getUser());
+        try {
+            dogWalkerProfileRepository.delete(profile);
+            userRepository.delete(profile.getUser());
+            userRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot delete a walker account with related records", exception);
+        }
     }
 
     @Transactional(readOnly = true)
