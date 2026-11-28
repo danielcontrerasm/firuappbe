@@ -25,6 +25,10 @@ public record SearchGroupDto(
         String createdByName,
         String createdByEmail,
         List<VolunteerMemberDto> volunteers,
-        boolean canClose
+        boolean canClose,
+        boolean canManageMembers,
+        boolean canViewRoster,
+        boolean activeMember,
+        boolean revokedMember
 ) {
 }

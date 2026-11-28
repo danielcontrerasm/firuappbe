@@ -100,6 +100,7 @@ public class NotificationService {
 
         notifyOwnerContacts(managedOwner, "Pet Alert", message, message, message);
     }
+    @Async("notificationExecutor")
     @Transactional(readOnly = true)
     public void notifyLostPet(User owner, String petName, String petType, String additionalInfo) {
         if (owner == null) return;

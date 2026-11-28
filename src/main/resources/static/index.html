@@ -224,6 +224,7 @@
                     <button id="refreshSearchGroupsBtn" class="icon-button">Actualizar grupos</button>
                 </div>
                 <div id="searchGroupsList" class="list-stack"></div>
+                <div id="rejoinOptionsList" class="list-stack"></div>
                     </section>
 
                     <div class="dashboard-grid">
@@ -251,14 +252,14 @@
                         <select name="petId" required>
                             <option value="">Selecciona la mascota</option>
                         </select>
-                        <input name="groupName" placeholder="Nombre del grupo" required>
+                        <input name="groupName" placeholder="Nombre del grupo" maxlength="255" required>
                         <select name="visibility" aria-label="Visibilidad del grupo">
                             <option value="PRIVATE">Privado · solo personas invitadas</option>
                             <option value="PUBLIC">Público · cualquiera puede verlo y unirse</option>
                         </select>
-                        <textarea name="description" rows="3" placeholder="Mensaje y detalles para la búsqueda"></textarea>
-                        <input name="area" placeholder="Zona o barrio">
-                        <input name="city" placeholder="Ciudad">
+                        <textarea name="description" rows="3" maxlength="1000" placeholder="Mensaje y detalles para la búsqueda"></textarea>
+                        <input name="area" maxlength="255" placeholder="Zona o barrio">
+                        <input name="city" maxlength="255" placeholder="Ciudad">
                         <button type="submit">Crear grupo</button>
                     </form>
 

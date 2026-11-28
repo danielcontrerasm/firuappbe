@@ -3,6 +3,7 @@ package com.example.pettracker.controller;
 import com.example.pettracker.dto.SearchGroupCreateRequest;
 import com.example.pettracker.dto.SearchGroupCreationCommand;
 import com.example.pettracker.dto.SearchGroupDto;
+import com.example.pettracker.dto.SearchGroupRejoinOptionDto;
 import com.example.pettracker.dto.SearchGroupUpdateRequest;
 import com.example.pettracker.dto.JoinSearchGroupResponse;
 import com.example.pettracker.dto.VolunteerCandidateDto;
@@ -11,8 +12,10 @@ import com.example.pettracker.dto.VolunteerRejoinRequestDto;
 import com.example.pettracker.entity.Pet;
 import com.example.pettracker.entity.SearchGroup;
 import com.example.pettracker.entity.User;
+import com.example.pettracker.entity.VolunteerRejoinRequest.Status;
 import com.example.pettracker.mapper.SearchGroupMapper;
 import com.example.pettracker.repository.SearchGroupRepository;
+import com.example.pettracker.repository.VolunteerRejoinRequestRepository;
 import com.example.pettracker.service.PetService;
 import com.example.pettracker.service.CurrentUserService;
 import com.example.pettracker.service.VolunteerService;
@@ -51,6 +54,7 @@ public class SearchGroupController {
     private final CurrentUserService currentUserService;
     private final PetService petService;
     private final SearchGroupRepository searchGroupRepository;
+    private final VolunteerRejoinRequestRepository rejoinRequestRepository;
     private final SearchGroupMapper searchGroupMapper;
 
     public SearchGroupController(
@@ -58,11 +62,13 @@ public class SearchGroupController {
             CurrentUserService currentUserService,
             PetService petService,
             SearchGroupRepository searchGroupRepository,
+            VolunteerRejoinRequestRepository rejoinRequestRepository,
             SearchGroupMapper searchGroupMapper) {
         this.volunteerService = volunteerService;
         this.currentUserService = currentUserService;
         this.petService = petService;
         this.searchGroupRepository = searchGroupRepository;
+        this.rejoinRequestRepository = rejoinRequestRepository;
         this.searchGroupMapper = searchGroupMapper;
     }
 
@@ -116,10 +122,7 @@ public class SearchGroupController {
                                 user.getRole() == User.Role.ADMIN ? request.volunteerUserIds() : List.of(),
                                 request.whatsappGroupLink(),
                                 image));
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(user.getRole() == User.Role.ADMIN
-                        ? searchGroupMapper.toDto(saved, true, isCreator(user, saved))
-                        : searchGroupMapper.toPublicDto(saved, isCreator(user, saved)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(searchGroupMapper.toDto(saved, user));
     }
 
     // REVIEWED
@@ -131,9 +134,7 @@ public class SearchGroupController {
             Authentication authentication) {
         User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request);
-        return user.getRole() == User.Role.ADMIN
-                ? searchGroupMapper.toDto(updated, true, isCreator(user, updated))
-                : searchGroupMapper.toPublicDto(updated, isCreator(user, updated));
+        return searchGroupMapper.toDto(updated, user);
     }
 
     // REVIEWED
@@ -146,9 +147,7 @@ public class SearchGroupController {
             Authentication authentication) {
         User user = currentUserService.require(authentication);
         SearchGroup updated = volunteerService.updateSearchGroup(searchGroupId, user, request, image);
-        return user.getRole() == User.Role.ADMIN
-                ? searchGroupMapper.toDto(updated, true, isCreator(user, updated))
-                : searchGroupMapper.toPublicDto(updated, isCreator(user, updated));
+        return searchGroupMapper.toDto(updated, user);
     }
 
     // REVIEWED
@@ -159,9 +158,7 @@ public class SearchGroupController {
             Authentication authentication) {
         User user = currentUserService.require(authentication);
         SearchGroup closed = volunteerService.closeSearchGroup(searchGroupId, user);
-        return user.getRole() == User.Role.ADMIN
-                ? searchGroupMapper.toDto(closed, true, isCreator(user, closed))
-                : searchGroupMapper.toPublicDto(closed, isCreator(user, closed));
+        return searchGroupMapper.toDto(closed, user);
     }
 
     @GetMapping("/{searchGroupId}")
@@ -180,10 +177,7 @@ public class SearchGroupController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
 
-        SearchGroupDto result = user.getRole() == User.Role.ADMIN
-                ? searchGroupMapper.toDto(group, true, isCreator(user, group))
-                : searchGroupMapper.toPublicDto(group, isCreator(user, group));
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(searchGroupMapper.toDto(group, user));
     }
 
     @GetMapping("/{searchGroupId}/image")
@@ -216,15 +210,11 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
         User user = currentUserService.require(authentication);
-        if (user.getRole() == User.Role.ADMIN) {
-            return searchGroupRepository.findAll(pageRequest(page, size)).getContent().stream()
-                    .map(group -> searchGroupMapper.toDto(group, true, isCreator(user, group)))
-                    .toList();
-        }
-        return searchGroupRepository.findDiscoverableForUser(
-                        user.getId(), pageRequest(page, size)).stream()
-                .map(group -> searchGroupMapper.toPublicDto(group, isCreator(user, group)))
-                .toList();
+        Pageable pageable = pageRequest(page, size);
+        List<SearchGroup> groups = user.getRole() == User.Role.ADMIN
+                ? searchGroupRepository.findAll(pageable).getContent()
+                : searchGroupRepository.findDiscoverableForUser(user.getId(), pageable);
+        return searchGroupMapper.toDtos(groups, user);
     }
 
     @GetMapping("/pet/{petId}")
@@ -240,18 +230,11 @@ public class SearchGroupController {
             return List.of();
         }
         boolean owner = pet.getOwner() != null && user.getId().equals(pet.getOwner().getId());
-        if (user.getRole() == User.Role.ADMIN || owner) {
-            boolean fullDetails = user.getRole() == User.Role.ADMIN;
-            return searchGroupRepository.findByPetId(petId, pageRequest(page, size)).stream()
-                    .map(group -> fullDetails
-                            ? searchGroupMapper.toDto(group, true, isCreator(user, group))
-                            : searchGroupMapper.toPublicDto(group, isCreator(user, group)))
-                    .toList();
-        }
-        return searchGroupRepository.findByPetIdAndActiveVolunteerUserId(
-                        petId, user.getId(), pageRequest(page, size)).stream()
-                .map(group -> searchGroupMapper.toPublicDto(group, isCreator(user, group)))
-                .toList();
+        Pageable pageable = pageRequest(page, size);
+        List<SearchGroup> groups = user.getRole() == User.Role.ADMIN || owner
+                ? searchGroupRepository.findByPetId(petId, pageable)
+                : searchGroupRepository.findByPetIdAndActiveVolunteerUserId(petId, user.getId(), pageable);
+        return searchGroupMapper.toDtos(groups, user);
     }
 
     // REVIEWED
@@ -369,10 +352,8 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
         User user = currentUserService.require(authentication);
-        SearchGroup group = searchGroupRepository.findById(searchGroupId).orElse(null);
-        if (group == null) {
-            return List.of();
-        }
+        SearchGroup group = searchGroupRepository.findById(searchGroupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found"));
         if (!volunteerService.canAccessSearchGroup(user, group)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
         }
@@ -393,19 +374,21 @@ public class SearchGroupController {
             @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
             Authentication authentication) {
         User user = currentUserService.require(authentication);
-        return volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)).stream()
-                .map(group -> user.getRole() == User.Role.ADMIN
-                        ? searchGroupMapper.toDto(group, true, isCreator(user, group))
-                        : searchGroupMapper.toPublicDto(group, isCreator(user, group)))
-                .toList();
+        return searchGroupMapper.toDtos(volunteerService.getUserSearchGroups(user.getId(), pageRequest(page, size)), user);
     }
 
-    private boolean isCreator(User user, SearchGroup group) {
-        return user != null && group.getCreatedBy() != null
-                && user.getId().equals(group.getCreatedBy().getId());
+    @GetMapping("/my/rejoin-options")
+    @Transactional(readOnly = true)
+    public List<SearchGroupRejoinOptionDto> myRejoinOptions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE) int size,
+            Authentication authentication) {
+        User user = currentUserService.require(authentication);
+        return rejoinRequestRepository.findRejoinOptions(
+                user.getId(), Status.PENDING, pageRequest(page, size).withSort(Sort.unsorted()));
     }
 
-    private Pageable pageRequest(int page, int size) {
+    private PageRequest pageRequest(int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));

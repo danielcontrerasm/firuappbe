@@ -27,10 +27,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -86,8 +88,10 @@ class VolunteerServiceTest {
     @Test
     void createAddsCreatorAndRequestedVolunteers() {
         User owner = user(1L, "Owner", "owner@example.com");
+        owner.setPhone("+573001234567");
         User member = user(2L, "Member", "member@example.com");
         Pet pet = Pet.builder().id(10L).name("Milo").owner(owner).build();
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(owner));
         when(userRepository.findById(2L)).thenReturn(Optional.of(member));
 
         SearchGroup group = volunteerService.createSearchGroupForLostPet(
@@ -103,11 +107,30 @@ class VolunteerServiceTest {
                 4.0,
                 List.of(2L, 2L));
 
+        assertNull(group.getLeaderPhone());
         org.mockito.ArgumentCaptor<Volunteer> membershipCaptor = org.mockito.ArgumentCaptor.forClass(Volunteer.class);
         verify(volunteerRepository, times(2)).save(membershipCaptor.capture());
         assertEquals(List.of(owner.getId(), member.getId()), membershipCaptor.getAllValues().stream()
                 .map(membership -> membership.getUser().getId())
                 .toList());
+    }
+
+    @Test
+    void creationLocksCreatorBeforeCheckingPlanQuota() {
+        User owner = user(1L, "Owner", "owner@example.com");
+        Pet pet = Pet.builder().id(10L).name("Milo").owner(owner).build();
+        when(userRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(owner));
+        when(searchGroupRepository.countByCreatedById(1L)).thenReturn(1L);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.createSearchGroupForLostPet(
+                        pet, owner, "Find Milo", null, null, null, null, null, null, null, null));
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        var checks = inOrder(userRepository, searchGroupRepository);
+        checks.verify(userRepository).findByIdForUpdate(1L);
+        checks.verify(searchGroupRepository).countByCreatedById(1L);
+        verify(searchGroupRepository, never()).save(any(SearchGroup.class));
     }
 
     @Test
@@ -178,6 +201,76 @@ class VolunteerServiceTest {
     }
 
     @Test
+    void privateClosedGroupAndMissingGroupGiveOutsiderSameJoinResponse() {
+        User outsider = user(2L, "Outsider", "outsider@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).status(SearchGroup.STATUS_CLOSED).build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(outsider));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException closed = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.joinSearchGroupWithResult(2L, 50L));
+        ResponseStatusException missing = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.joinSearchGroupWithResult(2L, 51L));
+
+        assertEquals(HttpStatus.NOT_FOUND, closed.getStatusCode());
+        assertEquals(missing.getStatusCode(), closed.getStatusCode());
+        assertEquals(missing.getReason(), closed.getReason());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+    }
+
+    @Test
+    void revokedMemberCannotSubmitRejoinRequestForClosedGroup() {
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).status(SearchGroup.STATUS_CLOSED).build();
+        Volunteer membership = Volunteer.builder()
+                .id(80L).user(member).searchGroup(group).active(false).revoked(true).build();
+        when(userRepository.findById(2L)).thenReturn(Optional.of(member));
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(membership);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.joinSearchGroupWithResult(2L, 50L));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verify(rejoinRequestRepository, never()).save(any(VolunteerRejoinRequest.class));
+    }
+
+    @Test
+    void privateGroupWithNoMembershipAndMissingGroupGiveSameLeaveResponse() {
+        SearchGroup group = SearchGroup.builder().id(50L).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException unrelated = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.leaveSearchGroup(2L, 50L));
+        ResponseStatusException missing = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.leaveSearchGroup(2L, 51L));
+
+        assertEquals(HttpStatus.NOT_FOUND, unrelated.getStatusCode());
+        assertEquals(missing.getStatusCode(), unrelated.getStatusCode());
+        assertEquals(missing.getReason(), unrelated.getReason());
+        verify(volunteerRepository, never()).save(any(Volunteer.class));
+    }
+
+    @Test
+    void creatorCannotLeaveButAnActiveMemberCanLeaveAClosedGroup() {
+        User creator = user(1L, "Creator", "creator@example.com");
+        User member = user(2L, "Member", "member@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(creator).status(SearchGroup.STATUS_CLOSED).build();
+        Volunteer membership = Volunteer.builder().id(80L).user(member).searchGroup(group).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+        when(volunteerRepository.findByUserIdAndSearchGroupId(2L, 50L)).thenReturn(membership);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.leaveSearchGroup(1L, 50L));
+        volunteerService.leaveSearchGroup(2L, 50L);
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertFalse(membership.getActive());
+        assertFalse(membership.getRevoked());
+        verify(volunteerRepository).save(membership);
+    }
+
+    @Test
     void creatorCanUpdateGroup() {
         User owner = user(1L, "Owner", "owner@example.com");
         SearchGroup group = SearchGroup.builder()
@@ -192,12 +285,26 @@ class VolunteerServiceTest {
                 50L,
                 owner,
                 new SearchGroupUpdateRequest(
-                        "New name", null, "closed", null, "Bogota", null, null, 2.5, null));
+                        "  New name  ", null, "closed", null, "Bogota", null, null, 2.5, null));
 
         assertEquals("New name", updated.getGroupName());
         assertEquals(SearchGroup.STATUS_CLOSED, updated.getStatus());
         assertEquals("Bogota", updated.getCity());
         assertEquals(2.5, updated.getCoverageRadiusKm());
+    }
+
+    @Test
+    void groupUpdateRejectsANameLongerThanTheColumn() {
+        User owner = user(1L, "Owner", "owner@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(owner).build();
+        when(searchGroupRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.updateSearchGroup(50L, owner,
+                        new SearchGroupUpdateRequest("a".repeat(256), null, null, null, null, null, null, null, null)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verify(searchGroupRepository, never()).save(any(SearchGroup.class));
     }
 
     @Test
@@ -256,6 +363,19 @@ class VolunteerServiceTest {
                 ResponseStatusException.class,
                 () -> volunteerService.searchVolunteerCandidates(
                         50L, "daniel", unrelatedUser, Pageable.ofSize(20)));
+        verify(userRepository, never()).searchVolunteerCandidates(any(), any(), any());
+    }
+
+    @Test
+    void closedGroupsRejectCandidateSearch() {
+        User owner = user(1L, "Owner", "owner@example.com");
+        SearchGroup group = SearchGroup.builder().id(50L).createdBy(owner).status(SearchGroup.STATUS_CLOSED).build();
+        when(searchGroupRepository.findById(50L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> volunteerService.searchVolunteerCandidates(50L, "daniel", owner, Pageable.ofSize(20)));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
         verify(userRepository, never()).searchVolunteerCandidates(any(), any(), any());
     }
 

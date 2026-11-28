@@ -37,10 +37,9 @@ ALTER TABLE IF EXISTS search_group
     ADD COLUMN IF NOT EXISTS status varchar(255) DEFAULT 'ACTIVE';
 
 UPDATE search_group
-SET status = CASE WHEN UPPER(status) = 'CLOSED' THEN 'CLOSED' ELSE 'ACTIVE' END
-WHERE status IS NULL OR UPPER(status) NOT IN ('ACTIVE', 'CLOSED');
+SET status = CASE WHEN UPPER(BTRIM(status)) = 'CLOSED' THEN 'CLOSED' ELSE 'ACTIVE' END
+WHERE status IS NULL OR status NOT IN ('ACTIVE', 'CLOSED');
 
-UPDATE search_group SET status = UPPER(status) WHERE status IN ('active', 'closed');
 ALTER TABLE IF EXISTS search_group ALTER COLUMN status SET DEFAULT 'ACTIVE';
 
 ALTER TABLE IF EXISTS geofence
@@ -355,6 +354,24 @@ WHERE v.id = ranked.id
   AND ranked.row_num > 1;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_volunteer_user_search_group
     ON volunteer(user_id, search_group_id);
+
+-- Legacy creators could leave. Restore their memberships without changing the original join date.
+INSERT INTO volunteer (user_id, search_group_id, joined_at, active, revoked)
+SELECT g.created_by, g.id, COALESCE(g.created_at, CURRENT_TIMESTAMP), true, false
+FROM search_group g
+WHERE g.created_by IS NOT NULL
+ON CONFLICT (user_id, search_group_id) DO UPDATE
+    SET active = true, revoked = false
+    WHERE volunteer.active IS DISTINCT FROM true OR volunteer.revoked IS DISTINCT FROM false;
+
+-- Restored creators are already members, so their self-rejoin requests are fulfilled.
+UPDATE volunteer_rejoin_requests r
+SET status = 'APPROVED', resolved_at = CURRENT_TIMESTAMP
+FROM volunteer v
+JOIN search_group g ON g.id = v.search_group_id AND g.created_by = v.user_id
+WHERE r.volunteer_id = v.id AND r.search_group_id = g.id AND r.status = 'PENDING'
+    AND v.active IS TRUE AND v.revoked IS FALSE;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uk_volunteer_rejoin_pending
     ON volunteer_rejoin_requests(volunteer_id) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_volunteer_rejoin_group_status_created

@@ -9,6 +9,9 @@ import com.example.pettracker.entity.User;
 import com.example.pettracker.entity.Volunteer;
 import com.example.pettracker.repository.VolunteerRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -20,40 +23,53 @@ public class SearchGroupMapper {
         this.volunteerRepository = volunteerRepository;
     }
 
-    public SearchGroupDto toDto(SearchGroup searchGroup) {
-        return toDto(searchGroup, true, false);
+    public SearchGroupDto toDto(SearchGroup searchGroup, User viewer) {
+        return toDtos(List.of(searchGroup), viewer).getFirst();
     }
 
-    /** Public lost-wall representation without account or volunteer user details. */
-    public SearchGroupDto toPublicDto(SearchGroup searchGroup) {
-        return toDto(searchGroup, false, false);
+    public List<SearchGroupDto> toDtos(List<SearchGroup> groups, User viewer) {
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+        List<Long> groupIds = groups.stream().map(SearchGroup::getId).toList();
+        boolean admin = viewer.getRole() == User.Role.ADMIN;
+        Map<Long, Volunteer> viewerMemberships = volunteerRepository
+                .findByUserIdAndSearchGroupIdIn(viewer.getId(), groupIds).stream()
+                .collect(Collectors.toMap(membership -> membership.getSearchGroup().getId(), Function.identity()));
+        Map<Long, List<Volunteer>> activeMembers = admin
+                ? volunteerRepository.findBySearchGroupIdInAndActiveTrueOrderByJoinedAtAsc(groupIds).stream()
+                        .collect(Collectors.groupingBy(membership -> membership.getSearchGroup().getId()))
+                : Map.of();
+        Map<Long, Integer> activeMemberCounts = admin
+                ? Map.of()
+                : volunteerRepository.findActiveMemberCounts(groupIds).stream()
+                        .collect(Collectors.toMap(VolunteerRepository.ActiveMemberCount::getGroupId,
+                                count -> count.getMemberCount().intValue()));
+        return groups.stream().map(group -> {
+            List<Volunteer> members = activeMembers.getOrDefault(group.getId(), List.of());
+            int memberCount = admin ? members.size() : activeMemberCounts.getOrDefault(group.getId(), 0);
+            return toDto(group, viewer, admin, viewerMemberships.get(group.getId()), members, memberCount);
+        }).toList();
     }
 
-    public SearchGroupDto toPublicDto(SearchGroup searchGroup, boolean canClose) {
-        return toDto(searchGroup, false, canClose);
-    }
-
-    public SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails, boolean canClose) {
-        return toDtoInternal(searchGroup, includePrivateDetails, canClose);
-    }
-
-    public SearchGroupDto toDto(SearchGroup searchGroup, boolean includePrivateDetails) {
-        return toDtoInternal(searchGroup, includePrivateDetails, false);
-    }
-
-    private SearchGroupDto toDtoInternal(SearchGroup searchGroup, boolean includePrivateDetails, boolean canClose) {
+    private SearchGroupDto toDto(
+            SearchGroup searchGroup,
+            User viewer,
+            boolean admin,
+            Volunteer viewerMembership,
+            List<Volunteer> activeMembers,
+            int memberCount) {
         Pet pet = searchGroup.getPet();
         User createdBy = searchGroup.getCreatedBy();
-        List<Volunteer> memberships = volunteerRepository
-                .findBySearchGroupIdAndActiveTrueOrderByJoinedAtAsc(searchGroup.getId());
-        List<VolunteerMemberDto> volunteerDtos = !includePrivateDetails
-                ? List.of()
-                : memberships.stream()
-                        .map(Volunteer::getUser)
-                        .filter(user -> user != null)
-                        .map(SearchGroupMapper::toVolunteerMemberDto)
-                        .toList();
-        int volunteerCount = memberships.size();
+        boolean creator = createdBy != null && viewer.getId().equals(createdBy.getId());
+        boolean petOwner = pet != null && pet.getOwner() != null && viewer.getId().equals(pet.getOwner().getId());
+        boolean revoked = viewerMembership != null && Boolean.TRUE.equals(viewerMembership.getRevoked());
+        boolean active = viewerMembership != null && Boolean.TRUE.equals(viewerMembership.getActive()) && !revoked;
+        List<VolunteerMemberDto> volunteerDtos = activeMembers.stream()
+                .map(Volunteer::getUser)
+                .filter(user -> user != null)
+                .map(SearchGroupMapper::toVolunteerMemberDto)
+                .toList();
 
         return new SearchGroupDto(
                 searchGroup.getId(),
@@ -63,7 +79,7 @@ public class SearchGroupMapper {
                 searchGroup.getStatus(),
                 searchGroup.getArea(),
                 searchGroup.getCity(),
-                volunteerCount,
+                memberCount,
                 searchGroup.getLeaderName(),
                 searchGroup.getLeaderPhone(),
                 searchGroup.getCoverageRadiusKm(),
@@ -73,11 +89,15 @@ public class SearchGroupMapper {
                 pet == null || pet.getStatus() == null ? null : pet.getStatus().name(),
                 imageUrl(searchGroup),
                 searchGroup.getWhatsappGroupLink(),
-                includePrivateDetails && createdBy != null ? createdBy.getId() : null,
-                includePrivateDetails && createdBy != null ? createdBy.getName() : null,
-                includePrivateDetails && createdBy != null ? createdBy.getEmail() : null,
+                admin && createdBy != null ? createdBy.getId() : null,
+                admin && createdBy != null ? createdBy.getName() : null,
+                admin && createdBy != null ? createdBy.getEmail() : null,
                 volunteerDtos,
-                canClose
+                creator,
+                admin || creator || petOwner,
+                admin || petOwner,
+                active,
+                revoked
         );
     }
 

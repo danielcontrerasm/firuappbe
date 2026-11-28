@@ -2,14 +2,20 @@ package com.example.pettracker.repository;
 
 import com.example.pettracker.dto.VolunteerCandidateDto;
 import com.example.pettracker.entity.User;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT user FROM User user WHERE user.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
 
     @Query("SELECT user FROM User user WHERE LOWER(user.email) = LOWER(:email)")
     Optional<User> findByEmail(@Param("email") String email);
@@ -26,7 +32,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
                 FROM Volunteer volunteer
                 WHERE volunteer.user.id = user.id
                     AND volunteer.searchGroup.id = :searchGroupId
-                    AND volunteer.active = true
+                    AND (volunteer.active = true OR volunteer.revoked = true)
             )
             """)
     List<VolunteerCandidateDto> searchVolunteerCandidates(

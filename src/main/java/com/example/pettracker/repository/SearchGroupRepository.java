@@ -23,6 +23,8 @@ public interface SearchGroupRepository extends JpaRepository<SearchGroup, Long> 
 
     List<SearchGroup> findByPetId(Long petId, Pageable pageable);
 
+    boolean existsByPetId(Long petId);
+
     long countByCreatedById(Long userId);
 
     @Query("""

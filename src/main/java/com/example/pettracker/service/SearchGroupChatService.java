@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.util.List;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -53,7 +52,7 @@ public class SearchGroupChatService {
         SearchGroup group = findGroup(searchGroupId);
         requireChatAccess(current, group);
 
-        return messageRepository.findBySearchGroupIdOrderByCreatedAtAsc(
+        return messageRepository.findBySearchGroupIdOrderByCreatedAtAscIdAsc(
                         searchGroupId,
                         pageRequest(page, size))
                 .stream()
@@ -67,7 +66,8 @@ public class SearchGroupChatService {
             Long searchGroupId,
             SearchGroupMessageRequest request) {
         User current = currentUserService.require(authentication);
-        SearchGroup group = findGroup(searchGroupId);
+        SearchGroup group = searchGroupRepository.findByIdForUpdate(searchGroupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found"));
         requireChatAccess(current, group);
         if (SearchGroup.STATUS_CLOSED.equalsIgnoreCase(group.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This search group is closed");
@@ -107,7 +107,8 @@ public class SearchGroupChatService {
                 && pet.getOwner() != null
                 && current.getId().equals(pet.getOwner().getId());
         Volunteer membership = volunteerRepository.findByUserIdAndSearchGroupId(current.getId(), group.getId());
-        boolean activeMember = membership != null && Boolean.TRUE.equals(membership.getActive());
+        boolean activeMember = membership != null && Boolean.TRUE.equals(membership.getActive())
+                && !Boolean.TRUE.equals(membership.getRevoked());
 
         if (!creator && !petOwner && !activeMember) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Search group not found");
@@ -117,7 +118,7 @@ public class SearchGroupChatService {
     private Pageable pageRequest(int page, int size) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size <= 0 ? DEFAULT_PAGE_SIZE : size, MAX_PAGE_SIZE));
-        return PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "createdAt"));
+        return PageRequest.of(safePage, safeSize);
     }
 
     private SearchGroupMessageDto toDto(SearchGroupMessage message) {
