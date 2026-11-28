@@ -7,6 +7,7 @@ import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.DecodeResult;
 import com.example.pettracker.gps.protocol.v41.V41ProtocolDecoder.GpsPosition;
 import com.example.pettracker.service.AppTimeService;
 import com.example.pettracker.service.GpsIngestionService;
+import com.example.pettracker.service.GpsIngestionResult;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Component
@@ -75,7 +77,10 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         try {
             DecodeResult result = new V41ProtocolDecoder(
                     terminalId -> jt808TimeZones.resolve(terminalId, appTimeService.zoneId())).decode(frame);
-            if (!sendJt808AckIfRequired(ctx, result)) return;
+            if (Jt808Replies.requiresReply(result.getMessageId())) {
+                handleJt808Reply(ctx, result, remoteAddress);
+                return;
+            }
             // Expensive success-path log: every V41 frame is already validated and failures still warn below.
             // log.info("Decoded GPS V41 message remote={} messageType={} messageId=0x{} terminalId={} sequence={}",
             //         remoteAddress,
@@ -98,19 +103,45 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
-    private boolean sendJt808AckIfRequired(ChannelHandlerContext ctx, DecodeResult result) {
-        if (!Jt808Replies.requiresReply(result.getMessageId())) return true;
+    private void handleJt808Reply(ChannelHandlerContext ctx, DecodeResult result, String remoteAddress) {
+        int sequence = nextReplySequence(ctx);
+        if (result.getPosition() != null) {
+            // Queue the position before starting any terminal lookup, so a later cache hit cannot overtake it.
+            persistLocation(result.getPosition(), remoteAddress).whenComplete((outcome, error) ->
+                    onEventLoop(ctx, () -> sendJt808Reply(ctx, result, sequence, error == null
+                            && (outcome == GpsIngestionResult.PERSISTED || outcome == GpsIngestionResult.REJECTED))));
+            return;
+        }
+        lookupTerminal(result.getTerminalId()).whenComplete((knownTerminal, lookupError) -> onEventLoop(ctx, () -> {
+            boolean success = lookupError == null && Boolean.TRUE.equals(knownTerminal);
+            if (!success) {
+                log.warn("JT808 message rejected for unknown/unavailable terminalId={} remote={}",
+                        result.getTerminalId(), ctx.channel().remoteAddress(), lookupError);
+            }
+            sendJt808Reply(ctx, result, sequence, success);
+        }));
+    }
 
-        boolean knownTerminal = gpsIngestionService.isKnownTerminalId(result.getTerminalId());
+    private CompletableFuture<Boolean> lookupTerminal(String terminalId) {
+        CompletableFuture<Boolean> lookup = gpsIngestionService.isKnownTerminalIdAsync(terminalId);
+        return lookup != null ? lookup : CompletableFuture.completedFuture(gpsIngestionService.isKnownTerminalId(terminalId));
+    }
+
+    private void onEventLoop(ChannelHandlerContext ctx, Runnable action) {
+        if (ctx.executor().inEventLoop()) action.run();
+        else ctx.executor().execute(action);
+    }
+
+    private int nextReplySequence(ChannelHandlerContext ctx) {
         Integer previous = ctx.channel().attr(JT808_REPLY_SEQUENCE).get();
         int sequence = previous == null ? 0 : previous;
         ctx.channel().attr(JT808_REPLY_SEQUENCE).set((sequence + 1) & 0xFFFF);
-        ctx.writeAndFlush(Unpooled.wrappedBuffer(Jt808Replies.response(result, sequence, knownTerminal)));
-        if (!knownTerminal) {
-            log.warn("JT808 message rejected for unregistered terminalId={} remote={}",
-                    result.getTerminalId(), ctx.channel().remoteAddress());
-        }
-        return knownTerminal;
+        return sequence;
+    }
+
+    private void sendJt808Reply(ChannelHandlerContext ctx, DecodeResult request, int sequence, boolean success) {
+        if (!ctx.channel().isActive()) return;
+        ctx.writeAndFlush(Unpooled.wrappedBuffer(Jt808Replies.response(request, sequence, success)));
     }
 
     private void handleAsciiBracketFrame(ChannelHandlerContext ctx, ByteBuf frame, String remoteAddress) {
@@ -148,17 +179,18 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             //         command,
             //         sanitizeForLog(payload));
 
-            sendAsciiAckIfRequired(ctx, protocol, terminalId, command, remoteAddress);
-
             Coordinates coordinates = extractCoordinates(payload);
             if (coordinates == null) {
+                if (requiresAsciiAck(command)) {
+                    writeAsciiAck(ctx, protocol, terminalId, command, remoteAddress);
+                }
                 // Expensive success-path log: non-location ASCII frames can be frequent.
                 // log.info("GPS ASCII frame has no coordinates remote={} command={} terminalId={}",
                 //         remoteAddress, command, terminalId);
                 return;
             }
 
-            enqueueDecodedLocation(
+            CompletableFuture<GpsIngestionResult> persistence = enqueueDecodedLocation(
                     "ASCII_BRACKET",
                     terminalId,
                     coordinates.latitude(),
@@ -170,23 +202,24 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     remoteAddress,
                     "command=" + command + ",terminalId=" + terminalId + ",batteryPercent=" + batteryPercent
             );
+            sendAsciiAckAfterProcessing(ctx, protocol, terminalId, command, remoteAddress, persistence);
         } catch (Exception ex) {
             log.warn("Failed to process GPS ASCII frame remote={} hex={} raw='{}': {}",
                     remoteAddress, truncateHex(hexDumpFrame(frame)), sanitizeForLog(raw), ex.getMessage(), ex);
         }
     }
 
-    private void persistLocation(GpsPosition position, String remoteAddress) {
+    private CompletableFuture<GpsIngestionResult> persistLocation(GpsPosition position, String remoteAddress) {
         String terminalId = position.getTerminalId();
         if (terminalId == null || terminalId.isBlank()) {
             log.warn("GPS V41 location missing terminalId remote={} position={}", remoteAddress, position);
-            return;
+            return CompletableFuture.completedFuture(GpsIngestionResult.UNKNOWN_TERMINAL);
         }
 
         if (position.getLatitude() == null || position.getLongitude() == null) {
             log.warn("GPS V41 location missing coordinates remote={} terminalId={} position={}",
                     remoteAddress, terminalId, position);
-            return;
+            return CompletableFuture.completedFuture(GpsIngestionResult.REJECTED);
         }
 
         try {
@@ -206,7 +239,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             //         position.getAlarm(),
             //         position.getAdditionalFields());
 
-            enqueueDecodedLocation(
+            return enqueueDecodedLocation(
                     "V41",
                     terminalId,
                     lat,
@@ -218,15 +251,15 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     remoteAddress,
                     "terminalId=" + terminalId + ",protocol=V41"
             );
-            //producer.sendLocation(terminalId, lat, lon, ts);
         } catch (Exception ex) {
             log.warn("Failed to persist GPS V41 location remote={} terminalId={} position={}: {}",
                     remoteAddress, terminalId, position, ex.getMessage(), ex);
+            return CompletableFuture.completedFuture(GpsIngestionResult.FAILED);
         }
     }
 
 
-    private void enqueueDecodedLocation(
+    private CompletableFuture<GpsIngestionResult> enqueueDecodedLocation(
             String protocol,
             String terminalId,
             double lat,
@@ -241,7 +274,8 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         // Expensive success-path log: every decoded point is persisted asynchronously below.
         // log.info("Enqueuing GPS {} location for async persistence terminalId={} lat={} lon={} timestamp={} gpsValid={} batteryPercent={} batteryVoltage={} remote={} context='{}'",
         //         protocol, terminalId, lat, lon, appTimeService.fromInstant(instant), gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
-        gpsIngestionService.processDecodedLocation(protocol, terminalId, lat, lon, instant, gpsValid, batteryPercent, batteryVoltage, remoteAddress, context);
+        return gpsIngestionService.processDecodedLocation(protocol, terminalId, lat, lon, instant, gpsValid,
+                batteryPercent, batteryVoltage, remoteAddress, context);
     }
 
     private String payloadCommand(String payload) {
@@ -249,19 +283,9 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         return commaIndex < 0 ? payload : payload.substring(0, commaIndex);
     }
 
-    private void sendAsciiAckIfRequired(
-            ChannelHandlerContext ctx,
-            String protocol,
-            String terminalId,
-            String command,
-            String remoteAddress
-    ) {
-        if (!requiresAsciiAck(command)) {
-            log.debug("GPS ASCII command does not require ACK remote={} command={} terminalId={}",
-                    remoteAddress, command, terminalId);
-            return;
-        }
-
+    private void writeAsciiAck(ChannelHandlerContext ctx, String protocol, String terminalId,
+                               String command, String remoteAddress) {
+        if (!ctx.channel().isActive()) return;
         String response = buildAsciiFrame(protocol, terminalId, command);
         ctx.writeAndFlush(Unpooled.copiedBuffer(response, StandardCharsets.US_ASCII))
                 .addListener(future -> {
@@ -273,6 +297,20 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
                                 remoteAddress, command, response, future.cause().getMessage(), future.cause());
                     }
                 });
+    }
+
+    private void sendAsciiAckAfterProcessing(ChannelHandlerContext ctx, String protocol, String terminalId,
+                                             String command, String remoteAddress,
+                                             CompletableFuture<GpsIngestionResult> persistence) {
+        if (!requiresAsciiAck(command)) return;
+        persistence.whenComplete((outcome, error) -> ctx.executor().execute(() -> {
+            if (error != null || (outcome != GpsIngestionResult.PERSISTED && outcome != GpsIngestionResult.REJECTED)) {
+                log.warn("GPS ASCII ACK withheld because location persistence failed terminalId={} remote={}",
+                        terminalId, remoteAddress, error);
+                return;
+            }
+            writeAsciiAck(ctx, protocol, terminalId, command, remoteAddress);
+        }));
     }
 
     private boolean requiresAsciiAck(String command) {

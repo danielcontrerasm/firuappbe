@@ -23,31 +23,74 @@ Objetivo: revisar cada funcionalidad para decidir qué código es necesario para
 
 ### Funcionalidades del producto
 
+Los requisitos de cada etapa están en el [catálogo de requisitos funcionales](docs/catalogo-requisitos.md#requisitos-funcionales).
+
+#### Cuenta y sesión
+
 - [ ] Registro, confirmación de correo, inicio de sesión y sesión JWT
-- [ ] Carga de usuarios
 - [ ] Carga del perfil del usuario
 - [ ] Carga del menú y sus opciones según usuario/rol
-- [ ] Carga del perfil de cada mascota
+
+#### Planes y límites
+
+- [ ] Asignación de plan y límites de uso
+
+#### Mascotas y rastreadores
+
 - [ ] Carga de la lista de mascotas
-- [ ] Flujo de geolocalización de principio a fin
+- [ ] Carga del perfil de cada mascota
+
+#### Acceso compartido y temporal
+
+- [ ] Acceso temporal y compartición de mascotas
+
+#### Dispositivos GPS e ingestión
+
+- [x] Ingesta y carga de datos GPS — revisión estática; hallazgos documentados; carga y validación con BD pendientes
 - [ ] Manejo de ejecuciones concurrentes de GPS
-- [ ] Ingesta y carga de datos GPS
+
+#### Ubicaciones e informes
+
 - [ ] Creación y persistencia de ubicaciones
-- [ ] Carga de la ruta del día
 - [ ] Carga de rutas para ventanas de 10 minutos y 3 horas
+- [ ] Carga de la ruta del día
 - [ ] Cálculo y carga de recorridos diarios y semanales
+- [ ] Flujo de geolocalización de principio a fin
+
+#### Geocercas y alertas
+
 - [ ] Creación, consulta y actualización de geocercas
+
+#### Grupos de búsqueda
+
 - [ ] Mascotas perdidas y grupos de búsqueda
 - [x] Creación de grupos de voluntarios — inspección de código; falta validación manual del flujo
-- [x] Incorporación y solicitud de reingreso a un grupo — implementación y pruebas unitarias de servicio revisadas; validación HTTP/manual y concurrencia pendientes
-- [ ] Agregar/invitar un voluntario a un grupo
-- [ ] Eliminar un voluntario de un grupo
+- [x] Incorporación a un grupo — implementación y pruebas unitarias de servicio revisadas; validación HTTP/manual y concurrencia pendientes
+- [x] Agregar/invitar un voluntario a un grupo — revisión estática de permisos, grupo cerrado, miembros revocados y notificación; validación HTTP/manual pendiente
+- [x] Eliminar un voluntario de un grupo — revisión estática de permisos, protección del creador y revocación; validación HTTP/manual pendiente
+- [x] Solicitud de reingreso a un grupo — implementación y pruebas unitarias de servicio revisadas; validación HTTP/manual y concurrencia pendientes
+
+#### Chat de búsqueda
+
 - [ ] Enviar mensajes a un grupo de voluntarios
+
+#### Paseadores y paseos
+
 - [ ] Marketplace de paseadores: perfiles, postulaciones y aprobación
 - [ ] Solicitudes de paseo, cotizaciones, mensajes, posiciones y finalización
-- [ ] Acceso temporal y compartición de mascotas
+
+#### Notificaciones
+
 - [ ] Notificaciones: correo, SMS, WhatsApp y WebSocket
+
+#### Administración y panel
+
+- [ ] Carga de usuarios
 - [ ] Métricas y operaciones de administración
+
+#### Datos de demostración
+
+- [ ] Preparación de cuentas, mascotas y simulación GPS de demostración
 
 ### Detalle por revisión
 
@@ -111,6 +154,49 @@ Un estado de grupo puede servir para cerrar o archivar una coordinación cuando 
 ### Proyecto separado
 
 - [ ] Servicio Transit (`../transit`): revisión separada pendiente. Su README indica que no heredó autenticación FiruApp y que las notificaciones solo se registran en logs.
+
+## Revisión: ingesta GPS
+
+**Estado:** correcciones de implementación aplicadas para consulta de terminal, ACK, colas, validación y orden de posiciones. No se ejecutaron pruebas en este turno; saturación, PostgreSQL real, cierre bajo carga y compatibilidad por modelo de dispositivo siguen pendientes.
+
+### Recorrido actual
+
+1. `GpsTcpServer` acepta conexiones Netty y `GpsProtocolDetector` selecciona Topin o el flujo V41/JT808/ASCII.
+2. Los terminales asociados se precargan en caché durante el inicio. JT808 resuelve un cache miss con un executor limitado y procesa la respuesta al terminar la consulta. Topin consulta solo la caché y falla cerrado durante el miss mientras programa la recarga; ese primer login puede requerir reconexión.
+3. La persistencia se delega al executor GPS o a la cola opcional en memoria. JT808, Topin y ASCII esperan el resultado antes de enviar un ACK positivo para una posición; fallos de escritura o capacidad lo retienen. Tramas descartadas deliberadamente por validación/orden se reconocen para evitar reintentos inútiles.
+4. `GpsIngestionService` valida fix GPS, coordenadas, antigüedad y orden estricto contra la última ubicación guardada. Solo después guarda `Location` y solicita evaluación de geocerca.
+5. Los límites por defecto son 10 minutos de antigüedad y 5 minutos futuros; el chequeo de timestamp y coordenadas es común a V41, Topin y ASCII.
+
+### Hallazgos
+
+- **Mitigado — entrega/ACK:** un ACK positivo de ubicación ocurre después de persistir o de rechazar deliberadamente el fix; error de base de datos, saturación y apagado sin drenaje no se confirman como éxito. Hay contadores de posiciones entregadas al servicio, guardadas, rechazadas, fallidas y descartes. El listener cierra clientes/event loops antes de drenar. La cola opcional sigue siendo volátil: un cierre abrupto puede perder datos y el drenaje espera hasta 30 segundos.
+- **Mitigado — validez y orden:** se rechazan `gpsValid=false`, coordenadas inválidas, puntos mayores de 10 minutos o más de 5 minutos en el futuro, y marcas de tiempo duplicadas o anteriores a la última guardada. Un bloqueo por mascota serializa esta comprobación en una instancia; varias réplicas aún requieren coordinación de base de datos.
+- **Mitigado — acceso a BD desde Netty:** la caché se precarga al iniciar. JT808 espera un lookup acotado fuera del event loop; Topin falla cerrado en cache miss y recarga en segundo plano. La primera conexión Topin durante un miss puede rechazarse.
+
+### Métodos y componentes revisados
+
+| Método/componente | Motivo |
+| --- | --- |
+| `GpsProtocolDetector` y `TopinSessionHandler.channelRead0` | Selección de protocolo, login y admisión Topin desde caché sin SQL en Netty. |
+| `GpsMessageHandler.channelRead0`, `handleJt808Reply`, `persistLocation`, `enqueueDecodedLocation`, `sendAsciiAckAfterProcessing` | Orden entre admisión, ACK diferido, validación y encolado. |
+| `GpsIngestionService.processDecodedLocation`, `isKnownTerminalId`, `isKnownTerminalIdAsync`, `submitGpsTask`, `enqueueMessage`, `consumeQueuedMessages`, `persistDecodedLocation`, `stopMessageQueue` | Caché, límites, resultados, descartes, orden y drenaje. |
+| `V41ProtocolDecoder.decodeLocation` y `TopinLocationHandler.channelRead0` | Diferencias de validación y ACK entre protocolos antes/después de guardar. |
+| `GpsTcpServer.shutdown` | Cierre del socket de escucha/clientes/event loops antes de detener los consumidores GPS. |
+| `AlertConfig.gpsExecutor`, `AlertConfig.gpsTerminalLookupExecutor` y `GpsCacheConfig.gpsPetByTerminalIdCache` | Capacidad de ejecutores y comportamiento de caché. |
+
+### Decisiones pendientes
+
+- Confirmar con cada modelo de terminal que la respuesta diferida conserva su temporización/reintentos; los fallos de infraestructura se responden con error JT808 o sin ACK Topin/ASCII.
+- Definir si se requiere cola durable; la cola en memoria conserva pérdida posible ante terminación abrupta.
+- Si se despliega más de una instancia, serializar el control de timestamp por mascota en PostgreSQL para cerrar carreras entre procesos.
+
+### Validación pendiente
+
+- [ ] Cache miss/expiración con PostgreSQL lento mientras reciben datos varios terminales; confirmar que Netty sigue procesando.
+- [ ] Saturación de executor y cola; comprobar ACK negativo/omitido y comparar recibidos, guardados, fallidos y descartados.
+- [ ] Error de base de datos y apagado con cola ocupada; comprobar drenaje dentro del timeout y contabilización de lo no guardado.
+- [ ] Fix V41 inválido, fuera de rango, duplicado, atrasado y fuera de orden; confirmar que no se guarda ni dispara geocerca.
+- [ ] Ejecución de carga con perfiles de terminal y configuración de producción.
 
 ## Métodos marcados como `REVIEWED`
 
@@ -198,11 +284,11 @@ La marca indica que se inspeccionó el método como parte de la revisión del fl
 | Base mínima de la aplicación | Pendiente | — | — | — |
 | Registro y autenticación | Pendiente | — | — | — |
 | Mascotas y rastreadores | Pendiente | — | — | — |
-| GPS y ubicaciones | Pendiente | — | — | — |
+| Acceso temporal | Pendiente | — | — | — |
+| GPS y ubicaciones | Correcciones de ingesta implementadas; validación pendiente | ACK positivo tras persistencia/rechazo deliberado; validación común; lookup asíncrono y drenaje limitado | Listener, decodificadores, handler, servicio GPS, caché, ejecutores, cola opcional, `Location` y geocercas | B16–B18 mitigadas parcialmente; falta carga, BD real, varias réplicas y validación por terminal |
 | Geocercas y alertas | Pendiente | — | — | — |
 | Comunidad de búsqueda | Pendiente | — | — | — |
 | Marketplace y paseos | Pendiente | — | — | — |
-| Acceso temporal | Pendiente | — | — | — |
 | Notificaciones | Pendiente | — | — | — |
 | Métricas y administración | Pendiente | — | — | — |
 | Transit (proyecto separado) | Pendiente | — | — | — |

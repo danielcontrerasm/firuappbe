@@ -248,6 +248,9 @@ flowchart TB
 | `GPS_INGESTION_CORE_THREADS` | Optional | GPS executor core threads |
 | `GPS_INGESTION_MAX_THREADS` | Optional | GPS executor max threads |
 | `GPS_INGESTION_QUEUE_CAPACITY` | Optional | GPS executor queue capacity |
+| `GPS_LISTENER_WORKER_THREADS` | Optional | Netty worker count; `0` keeps Netty's CPU-based default |
+| `GPS_LISTENER_LEGACY_READ_IDLE_TIMEOUT_SECONDS` | Optional | Close identified non-Topin tracker connections after 600 idle seconds by default; `0` disables |
+| `GPS_LISTENER_SHUTDOWN_TIMEOUT_SECONDS` | Optional | Deadline for closing GPS clients and event loops |
 | `TWILIO_*` | Optional | SMS/WhatsApp notifications |
 | `SPRING_MAIL_*` | Optional | Email notifications |
 | `JDBC_WATCHDOG_ENABLED` | Temporary only | Kill stale idle DB transactions if explicitly enabled |
@@ -257,8 +260,10 @@ flowchart TB
 | Thread Pool | Purpose | Notes |
 | --- | --- | --- |
 | Tomcat request threads | REST API traffic | Configurable max/min spare |
-| Netty event loops | GPS TCP frame handling | Must not block on DB work |
-| `gpsExecutor` | Async tracker GPS persistence | Queue has bounded capacity and drop counter |
+| Netty event loops | GPS TCP frame handling | Database lookups run on the bounded terminal lookup executor; Topin login waits asynchronously for a cold-cache lookup without blocking the event loop |
+| `gpsTerminalLookupExecutor` | Terminal ID cache misses/refreshes | Bounded database lookup work outside Netty; rejection fails closed |
+| `gpsExecutor` | Async tracker GPS persistence | Bounded capacity; persistence failures and rejections produce a failed result and withhold a positive location ACK |
+| Optional GPS message queue | In-memory buffering before persistence | Volatile; overflow fails the location without a positive ACK; shutdown drains for up to 30 seconds and counts abandoned entries |
 | `geofenceExecutor` | Async geofence checks | Used for volunteer notification path |
 | `notificationExecutor` | Email/SMS/WhatsApp async work | Isolates slow providers |
 | `alertExecutor` | Alert-related async tasks | Separate from HTTP request threads |
@@ -282,13 +287,23 @@ sequenceDiagram
     TCP->>Handler: ByteBuf frame
     Handler->>Decoder: decode(frame)
     Decoder-->>Handler: GpsPosition
+    Handler->>Ingest: isKnownTerminalIdAsync(...) for JT808 / Topin login
+    Note over Handler,Ingest: Both wait asynchronously for cold-cache results; Netty event loops remain free
     Handler->>Ingest: processDecodedLocation(...)
-    Ingest->>Ingest: enqueue task
+    Ingest->>Ingest: enqueue in bounded executor or optional in-memory queue
     Ingest->>DB: save Location
+    Ingest-->>Handler: Persisted, deliberately rejected, or failed
+    alt persisted or deliberately rejected
+        Handler-->>Tracker: Positive protocol ACK
+    else infrastructure failure
+        Handler-->>Tracker: Negative ACK or no ACK
+    end
     Ingest->>Geo: check geofence
     Geo->>DB: read Geofence / Pet
     Geo->>Notify: send owner/volunteer notifications when outside zone
 ```
+
+Executor/queue saturation and persistence errors withhold a positive location ACK so devices can retry; the optional queue remains volatile and drains for up to 30 seconds at shutdown. GPS ingestion now rejects invalid fixes, out-of-range coordinates, timestamps outside the shared freshness window, and duplicate/out-of-order points. A cache miss starts a bounded asynchronous terminal lookup; Netty event loops do not query PostgreSQL. See the updated ingestion behavior and remaining deployment limits in the [requirements catalog](catalogo-requisitos.md).
 
 ### 13.2 Manual Location Update
 
@@ -503,7 +518,9 @@ flowchart TD
 | `database.idleInTransactionConnections` | `pg_stat_activity` | Sessions holding open idle transactions |
 | `pool.activeConnections` | Hikari MXBean | Currently borrowed connections |
 | `pool.threadsAwaitingConnection` | Hikari MXBean | Threads waiting for DB connection |
-| `gps.droppedTasks` | GPS ingestion service | GPS tasks rejected due to full queue |
+| `gps.receivedLocations` / `gps.persistedLocations` | GPS ingestion service | Process-local counts used to reconcile receipt and committed writes |
+| `gps.rejectedLocations` / `gps.failedTasks` | GPS ingestion service | Deliberately invalid/out-of-order fixes vs infrastructure or capacity failures |
+| `gps.droppedTasks` | GPS ingestion service | Direct executor rejections; the failed counter also includes these tasks |
 
 ## 18. Failure Modes and Mitigations
 

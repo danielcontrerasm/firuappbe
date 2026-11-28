@@ -23,6 +23,9 @@ public class Location {
     @Builder.Default
     private LocalDateTime timestamp = LocalDateTime.now();
 
+    @Column(name = "tracker_recorded", nullable = false)
+    private boolean trackerRecorded;
+
     private Integer batteryPercent;
 
     private Double batteryVoltage;

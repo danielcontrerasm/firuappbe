@@ -13,7 +13,7 @@ public class GpsCacheConfig {
 
     @Bean("gpsPetByTerminalIdCache")
     public Cache<String, CachedPetLookup> gpsPetByTerminalIdCache(
-            @Value("${gps.cache.pet-by-terminal-id.maximum-size:10000}") long maximumSize) {
+            @Value("${gps.cache.pet-by-terminal-id.maximum-size:100000}") long maximumSize) {
         return Caffeine.newBuilder()
                 .maximumSize(maximumSize)
                 .expireAfter(new Expiry<String, CachedPetLookup>() {

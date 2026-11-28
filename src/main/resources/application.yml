@@ -109,17 +109,27 @@ gps:
       "[014166272782]": ${GPS_HW10_TIME_ZONE:UTC}
   listener:
     port: 5000
+    shutdown-timeout-seconds: ${GPS_LISTENER_SHUTDOWN_TIMEOUT_SECONDS:10}
+    worker-threads: ${GPS_LISTENER_WORKER_THREADS:0}
+    legacy-read-idle-timeout-seconds: ${GPS_LISTENER_LEGACY_READ_IDLE_TIMEOUT_SECONDS:600}
   ingestion:
     core-threads: ${GPS_INGESTION_CORE_THREADS:2}
     max-threads: ${GPS_INGESTION_MAX_THREADS:4}
     queue-capacity: ${GPS_INGESTION_QUEUE_CAPACITY:500}
+    maximum-position-age: ${GPS_INGESTION_MAX_POSITION_AGE:PT10M}
+    maximum-future-position-skew: ${GPS_INGESTION_MAX_FUTURE_SKEW:PT5M}
+    message-queue-shutdown-timeout-seconds: ${GPS_INGESTION_SHUTDOWN_TIMEOUT_SECONDS:30}
     message-queue:
       enabled: ${GPS_INGESTION_MESSAGE_QUEUE_ENABLED:false}
       capacity: ${GPS_INGESTION_MESSAGE_QUEUE_CAPACITY:10000}
       consumers: ${GPS_INGESTION_MESSAGE_QUEUE_CONSUMERS:1}
+  lookup:
+    core-threads: ${GPS_LOOKUP_CORE_THREADS:2}
+    max-threads: ${GPS_LOOKUP_MAX_THREADS:4}
+    queue-capacity: ${GPS_LOOKUP_QUEUE_CAPACITY:1000}
   cache:
     pet-by-terminal-id:
-      maximum-size: ${GPS_PET_CACHE_MAXIMUM_SIZE:10000}
+      maximum-size: ${GPS_PET_CACHE_MAXIMUM_SIZE:100000}
       known-ttl: ${GPS_PET_CACHE_KNOWN_TTL:PT24H}
       unknown-ttl: ${GPS_PET_CACHE_UNKNOWN_TTL:PT1M}
 

@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -34,7 +35,7 @@ public class VolunteerNotificationService {
     // REVIEWED
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public void notifyGroupMembersWhenCreated(SearchGroupCreatedEvent event) {
         List<Volunteer> members = volunteerRepository
                 .findByActiveTrueAndSearchGroupId(event.searchGroupId());
@@ -71,7 +72,7 @@ public class VolunteerNotificationService {
     // REVIEWED
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public void notifyOwnerWhenVolunteerJoins(VolunteerJoinedGroupEvent event) {
         Volunteer membership = volunteerRepository.findByUserIdAndSearchGroupId(
                 event.volunteerUserId(), event.searchGroupId());
@@ -112,7 +113,7 @@ public class VolunteerNotificationService {
     // REVIEWED
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public void notifyVolunteerWhenAdded(VolunteerAddedToGroupEvent event) {
         Volunteer membership = volunteerRepository.findByUserIdAndSearchGroupId(
                 event.volunteerUserId(), event.searchGroupId());
@@ -140,7 +141,7 @@ public class VolunteerNotificationService {
     // REVIEWED
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public void notifyCreatorAboutRejoinRequest(VolunteerRejoinRequestedEvent event) {
         VolunteerRejoinRequest request = rejoinRequestRepository
                 .findWithDetailsById(event.requestId())
@@ -181,7 +182,7 @@ public class VolunteerNotificationService {
     // REVIEWED
     @Async("notificationExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public void notifyVolunteerAboutRejoinDecision(VolunteerRejoinResolvedEvent event) {
         VolunteerRejoinRequest request = rejoinRequestRepository
                 .findWithDetailsById(event.requestId())

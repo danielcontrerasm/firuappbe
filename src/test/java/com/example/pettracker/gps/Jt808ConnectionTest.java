@@ -1,6 +1,7 @@
 package com.example.pettracker.gps;
 
 import com.example.pettracker.service.AppTimeService;
+import com.example.pettracker.service.GpsIngestionResult;
 import com.example.pettracker.service.GpsIngestionService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -9,10 +10,12 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -37,18 +40,28 @@ class Jt808ConnectionTest {
     @Test
     void legacyRegistrationAuthenticationHeartbeatAndLocationWorkOnSharedPort() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
-        when(ingestion.isKnownTerminalId(TERMINAL)).thenReturn(true);
+        CompletableFuture<Boolean> lookup = new CompletableFuture<>();
+        when(ingestion.isKnownTerminalIdAsync(TERMINAL)).thenReturn(lookup);
+        CompletableFuture<GpsIngestionResult> persistence = new CompletableFuture<>();
+        stubLocationResult(ingestion, TERMINAL, persistence);
         EmbeddedChannel channel = channel(ingestion);
         try {
-            // Fragment the first packet, then coalesce three different message types.
+            // Fragment registration, then wait for the response before sending authentication.
             write(channel, REGISTER.substring(0, 10));
             assertThat((Object) channel.readOutbound()).isNull();
-            write(channel, REGISTER.substring(10) + AUTH + HEARTBEAT + LOCATION);
+            write(channel, REGISTER.substring(10));
+            assertThat((Object) channel.readOutbound()).isNull();
 
+            lookup.complete(true);
+            channel.runPendingTasks();
             assertReply(channel, "7e8100000f0133456789060000000f00303133333435363738393036187e");
+            write(channel, AUTH + HEARTBEAT + LOCATION);
             assertReply(channel, "7e8001000501334567890600010010010200097e");
             // Both reserved bytes in the acknowledged request sequence must be escaped.
             assertReply(channel, "7e8001000501334567890600027d017d02000200187e");
+            assertThat((Object) channel.readOutbound()).isNull();
+            persistence.complete(GpsIngestionResult.PERSISTED);
+            channel.runPendingTasks();
             assertReply(channel, "7e8001000501334567890600030012020000087e");
             assertThat((Object) channel.readOutbound()).isNull();
             assertLocation(ingestion, TERMINAL);
@@ -61,7 +74,8 @@ class Jt808ConnectionTest {
     @Test
     void version2019PreservesPaddedIdentityAndVersionInReplies() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
-        when(ingestion.isKnownTerminalId(TERMINAL_2019)).thenReturn(true);
+        when(ingestion.isKnownTerminalIdAsync(TERMINAL_2019)).thenReturn(CompletableFuture.completedFuture(true));
+        stubLocationResult(ingestion, TERMINAL_2019, GpsIngestionResult.PERSISTED);
         EmbeddedChannel channel = channel(ingestion);
         try {
             // Extra delimiters and fragmented 2019 header must not become a corrupt frame.
@@ -71,6 +85,28 @@ class Jt808ConnectionTest {
             assertReply(channel, HEARTBEAT_2019_REPLY);
             assertReply(channel, "7e800140050100000001234567890123000100220200004f7e");
             assertLocation(ingestion, TERMINAL_2019);
+            assertThat((Object) channel.readOutbound()).isNull();
+        } finally {
+            channel.finishAndReleaseAll();
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = GpsIngestionResult.class, names = {"REJECTED", "FAILED"})
+    void locationWaitsForOutcomeAndAcknowledgesOnlyDeliberateRejection(GpsIngestionResult outcome) {
+        GpsIngestionService ingestion = mock(GpsIngestionService.class);
+        CompletableFuture<GpsIngestionResult> persistence = new CompletableFuture<>();
+        stubLocationResult(ingestion, TERMINAL, persistence);
+        EmbeddedChannel channel = channel(ingestion);
+        try {
+            write(channel, LOCATION);
+            assertLocation(ingestion, TERMINAL);
+            assertThat((Object) channel.readOutbound()).isNull();
+            persistence.complete(outcome);
+            channel.runPendingTasks();
+            assertReply(channel, outcome == GpsIngestionResult.REJECTED
+                    ? "7e80010005013345678906000000120200000b7e"
+                    : "7e80010005013345678906000000120200010a7e");
             assertThat((Object) channel.readOutbound()).isNull();
         } finally {
             channel.finishAndReleaseAll();
@@ -88,7 +124,7 @@ class Jt808ConnectionTest {
     })
     void validatedBatteryIsForwardedWithoutDroppingTheLocation(String terminal, String packet, Integer battery) {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
-        when(ingestion.isKnownTerminalId(terminal)).thenReturn(true);
+        stubLocationResult(ingestion, terminal, GpsIngestionResult.PERSISTED);
         EmbeddedChannel channel = channel(ingestion);
         try {
             write(channel, packet);
@@ -102,14 +138,17 @@ class Jt808ConnectionTest {
     }
 
     @Test
-    void unknownTerminalGetsFailureRepliesAndNoLocationIsIngested() {
+    void unknownTerminalGetsFailureRepliesForRegistrationAndLocation() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
+        when(ingestion.isKnownTerminalIdAsync(TERMINAL)).thenReturn(CompletableFuture.completedFuture(false));
+        stubLocationResult(ingestion, TERMINAL, GpsIngestionResult.UNKNOWN_TERMINAL);
         EmbeddedChannel channel = channel(ingestion);
         try {
             write(channel, REGISTER + LOCATION);
             assertReply(channel, "7e810000030133456789060000000f04167e");
             assertReply(channel, "7e80010005013345678906000100120200010b7e");
-            verify(ingestion, times(2)).isKnownTerminalId(TERMINAL);
+            verify(ingestion).isKnownTerminalIdAsync(TERMINAL);
+            assertLocation(ingestion, TERMINAL);
             verifyNoMoreInteractions(ingestion);
         } finally {
             channel.finishAndReleaseAll();
@@ -119,7 +158,7 @@ class Jt808ConnectionTest {
     @Test
     void replySequencesAreIndependentForConnectionsUsingTheSameHandler() {
         GpsIngestionService ingestion = mock(GpsIngestionService.class);
-        when(ingestion.isKnownTerminalId(TERMINAL_2019)).thenReturn(true);
+        when(ingestion.isKnownTerminalIdAsync(TERMINAL_2019)).thenReturn(CompletableFuture.completedFuture(true));
         GpsMessageHandler handler = new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota"), new Jt808TimeZones());
         EmbeddedChannel first = new EmbeddedChannel(new GpsProtocolDetector(handler, ingestion));
         EmbeddedChannel second = new EmbeddedChannel(new GpsProtocolDetector(handler, ingestion));
@@ -152,7 +191,7 @@ class Jt808ConnectionTest {
             assertThat((Object) channel.readOutbound()).isNull();
             verifyNoInteractions(ingestion);
             // A bad packet must not prevent processing the next valid packet.
-            when(ingestion.isKnownTerminalId(TERMINAL_2019)).thenReturn(true);
+            when(ingestion.isKnownTerminalIdAsync(TERMINAL_2019)).thenReturn(CompletableFuture.completedFuture(true));
             write(channel, HEARTBEAT_2019);
             assertReply(channel, HEARTBEAT_2019_REPLY);
         } finally {
@@ -176,6 +215,17 @@ class Jt808ConnectionTest {
     private static EmbeddedChannel channel(GpsIngestionService ingestion) {
         return new EmbeddedChannel(new GpsProtocolDetector(
                 new GpsMessageHandler(ingestion, new AppTimeService("America/Bogota"), new Jt808TimeZones()), ingestion));
+    }
+
+    private static void stubLocationResult(GpsIngestionService ingestion, String terminal, GpsIngestionResult result) {
+        stubLocationResult(ingestion, terminal, CompletableFuture.completedFuture(result));
+    }
+
+    private static void stubLocationResult(GpsIngestionService ingestion, String terminal,
+                                           CompletableFuture<GpsIngestionResult> result) {
+        when(ingestion.processDecodedLocation(eq("V41"), eq(terminal), anyDouble(), anyDouble(),
+                any(Instant.class), anyBoolean(), nullable(Integer.class), nullable(Double.class), anyString(), anyString()))
+                .thenReturn(result);
     }
 
     private static void write(EmbeddedChannel channel, String hex) {

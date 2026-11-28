@@ -61,9 +61,11 @@ class Jt808DeviceTimeZoneTest {
         when(pets.findByTerminalId(terminal)).thenReturn(Optional.of(
                 Pet.builder().id(7L).name("Tracker pet").terminalId(terminal).build()));
         when(locations.save(any(Location.class))).thenAnswer(call -> call.getArgument(0));
+        // The fixed packets are fixtures for timezone conversion, independent of the current date.
+        Duration fixtureWindow = Duration.ofDays(36_500);
         GpsIngestionService ingestion = new GpsIngestionService(locations, pets, mock(GeofencingService.class),
-                Runnable::run, appTime, Caffeine.newBuilder().build(), Duration.ofDays(1), Duration.ofMinutes(1),
-                false, 100, 1);
+                Runnable::run, Runnable::run, appTime, Caffeine.newBuilder().build(), Duration.ofDays(1),
+                Duration.ofMinutes(1), fixtureWindow, fixtureWindow, false, 100, 1, 30, 500, 4);
         Jt808TimeZones timeZones = new Jt808TimeZones();
         timeZones.setTerminalTimeZones(Map.of("014166272782", hw10Zone));
         EmbeddedChannel channel = new EmbeddedChannel(new GpsProtocolDetector(

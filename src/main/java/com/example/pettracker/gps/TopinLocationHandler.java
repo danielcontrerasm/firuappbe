@@ -1,8 +1,10 @@
 package com.example.pettracker.gps;
 
+import com.example.pettracker.service.GpsIngestionResult;
 import com.example.pettracker.service.GpsIngestionService;
 import com.example.pettracker.topin.TopinDeviceEvent;
 import com.example.pettracker.topin.TopinMessage;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 
@@ -23,7 +25,16 @@ final class TopinLocationHandler extends SimpleChannelInboundHandler<TopinDevice
         if (event.eligibleForLiveLocation() && event.message() instanceof TopinMessage.Gps gps) {
             ingestion.processDecodedLocation("TOPIN", event.imei(), gps.latitude(), gps.longitude(),
                     gps.deviceTime(), gps.valid(), batteryPercent, null,
-                    String.valueOf(ctx.channel().remoteAddress()), event.qualityNote());
+                    String.valueOf(ctx.channel().remoteAddress()), event.qualityNote())
+                    .whenComplete((result, error) -> ctx.executor().execute(() -> {
+                        if (!ctx.channel().isActive()) return;
+                        if (error != null || (result != GpsIngestionResult.PERSISTED
+                                && result != GpsIngestionResult.REJECTED)) {
+                            return; // No positive device acknowledgement; allow a tracker retry.
+                        }
+                        byte[] acknowledgement = event.acknowledgementAfterIngestion();
+                        if (acknowledgement != null) ctx.writeAndFlush(Unpooled.wrappedBuffer(acknowledgement));
+                    }));
         }
     }
 }
