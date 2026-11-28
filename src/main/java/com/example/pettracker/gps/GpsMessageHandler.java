@@ -105,33 +105,20 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private void handleJt808Reply(ChannelHandlerContext ctx, DecodeResult result, String remoteAddress) {
         int sequence = nextReplySequence(ctx);
+        if (result.getPosition() != null) {
+            // Queue the position before starting any terminal lookup, so a later cache hit cannot overtake it.
+            persistLocation(result.getPosition(), remoteAddress).whenComplete((outcome, error) ->
+                    onEventLoop(ctx, () -> sendJt808Reply(ctx, result, sequence, error == null
+                            && (outcome == GpsIngestionResult.PERSISTED || outcome == GpsIngestionResult.REJECTED))));
+            return;
+        }
         lookupTerminal(result.getTerminalId()).whenComplete((knownTerminal, lookupError) -> onEventLoop(ctx, () -> {
-            if (lookupError != null || !Boolean.TRUE.equals(knownTerminal)) {
+            boolean success = lookupError == null && Boolean.TRUE.equals(knownTerminal);
+            if (!success) {
                 log.warn("JT808 message rejected for unknown/unavailable terminalId={} remote={}",
                         result.getTerminalId(), ctx.channel().remoteAddress(), lookupError);
-                sendJt808Reply(ctx, result, sequence, false);
-                return;
             }
-            if (result.getPosition() == null) {
-                sendJt808Reply(ctx, result, sequence, true);
-                return;
-            }
-            CompletableFuture<GpsIngestionResult> persistence = persistLocation(result.getPosition(), remoteAddress);
-            if (persistence == null) {
-                log.error("GPS ingestion returned no persistence outcome terminalId={}", result.getTerminalId());
-                sendJt808Reply(ctx, result, sequence, false);
-                return;
-            }
-            persistence.whenComplete((outcome, error) -> onEventLoop(ctx, () -> {
-                    if (error != null) {
-                        log.warn("JT808 location persistence failed terminalId={} remote={}",
-                                result.getTerminalId(), remoteAddress, error);
-                    }
-                    // Positive platform acknowledgement means this fix was committed or
-                    // deliberately rejected by validation/order rules. Persistence failures stay negative.
-                    sendJt808Reply(ctx, result, sequence, error == null
-                            && (outcome == GpsIngestionResult.PERSISTED || outcome == GpsIngestionResult.REJECTED));
-            }));
+            sendJt808Reply(ctx, result, sequence, success);
         }));
     }
 
@@ -226,7 +213,7 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
         String terminalId = position.getTerminalId();
         if (terminalId == null || terminalId.isBlank()) {
             log.warn("GPS V41 location missing terminalId remote={} position={}", remoteAddress, position);
-            return CompletableFuture.completedFuture(GpsIngestionResult.REJECTED);
+            return CompletableFuture.completedFuture(GpsIngestionResult.UNKNOWN_TERMINAL);
         }
 
         if (position.getLatitude() == null || position.getLongitude() == null) {
@@ -320,10 +307,6 @@ public class GpsMessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
             if (error != null || (outcome != GpsIngestionResult.PERSISTED && outcome != GpsIngestionResult.REJECTED)) {
                 log.warn("GPS ASCII ACK withheld because location persistence failed terminalId={} remote={}",
                         terminalId, remoteAddress, error);
-                return;
-            }
-            if (!gpsIngestionService.isKnownTerminalId(terminalId)) {
-                log.warn("GPS ASCII ACK withheld for unknown/cold terminalId={} remote={}", terminalId, remoteAddress);
                 return;
             }
             writeAsciiAck(ctx, protocol, terminalId, command, remoteAddress);

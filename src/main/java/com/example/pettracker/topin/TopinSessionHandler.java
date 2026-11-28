@@ -27,7 +27,8 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
     private String imei;
     private boolean closingAfterError;
     private boolean loginLookupPending;
-    private boolean autoReadBeforeLoginLookup;
+    // Keep the original setting until every login in this batch has completed.
+    private Boolean autoReadBeforeLoginLookup;
 
     public TopinSessionHandler(Predicate<String> knownImei, TopinReplyProfile profile) {
         this(knownImei, profile, Clock.systemUTC(), Duration.ofMinutes(5), true);
@@ -133,8 +134,10 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
 
     private void beginLoginLookup(ChannelHandlerContext ctx, TopinMessage.Login login, Instant receivedAt) {
         loginLookupPending = true;
-        autoReadBeforeLoginLookup = ctx.channel().config().isAutoRead();
-        ctx.channel().config().setAutoRead(false);
+        if (autoReadBeforeLoginLookup == null) {
+            autoReadBeforeLoginLookup = ctx.channel().config().isAutoRead();
+            ctx.channel().config().setAutoRead(false);
+        }
 
         CompletableFuture<Boolean> lookup;
         try {
@@ -172,13 +175,16 @@ public final class TopinSessionHandler extends SimpleChannelInboundHandler<Topin
             PendingPacket pending = packetsDuringLoginLookup.removeFirst();
             processPacket(ctx, pending.packet(), pending.receivedAt());
         }
-        if (ctx.channel().isActive() && !loginLookupPending) {
-            ctx.channel().config().setAutoRead(autoReadBeforeLoginLookup);
+        if (ctx.channel().isActive() && !loginLookupPending && autoReadBeforeLoginLookup != null) {
+            boolean originalAutoRead = autoReadBeforeLoginLookup;
+            autoReadBeforeLoginLookup = null;
+            ctx.channel().config().setAutoRead(originalAutoRead);
         }
     }
 
     private void rejectLogin(ChannelHandlerContext ctx) {
         loginLookupPending = false;
+        autoReadBeforeLoginLookup = null;
         packetsDuringLoginLookup.clear();
         // Do not send 0x44: some firmware treats it as an instruction to stop uploading.
         ctx.close();

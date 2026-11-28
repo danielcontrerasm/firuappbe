@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS email_verification_token (
 );
 
 ALTER TABLE IF EXISTS location
+    ADD COLUMN IF NOT EXISTS tracker_recorded boolean NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS battery_percent integer,
     ADD COLUMN IF NOT EXISTS battery_voltage double precision,
     ADD COLUMN IF NOT EXISTS city varchar(255),
@@ -332,6 +333,7 @@ CREATE INDEX IF NOT EXISTS idx_pet_owner_id ON pet(owner_id);
 CREATE INDEX IF NOT EXISTS idx_pet_imei ON pet(imei);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_pet_terminal_id ON pet(terminal_id) WHERE terminal_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_location_pet_timestamp ON location(pet_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_location_tracker_pet_timestamp ON location(pet_id, timestamp DESC) WHERE tracker_recorded;
 CREATE INDEX IF NOT EXISTS idx_location_timestamp ON location(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_geofence_pet_id ON geofence(pet_id);
 CREATE INDEX IF NOT EXISTS idx_alert_pet_created ON alert(pet_id, created_at DESC);

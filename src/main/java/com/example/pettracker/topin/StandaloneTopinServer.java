@@ -1,6 +1,7 @@
 package com.example.pettracker.topin;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
@@ -10,6 +11,7 @@ import io.netty.handler.logging.LoggingHandler;
 
 import java.util.Arrays;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /** Standalone diagnostic listener. Events are printed; persistence belongs to the application. */
@@ -40,12 +42,7 @@ public final class StandaloneTopinServer {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override protected void initChannel(SocketChannel ch) {
                             if (trace) ch.pipeline().addLast("rawTopin", new LoggingHandler("gps.topin.raw", LogLevel.INFO));
-                            TopinPipeline.install(ch.pipeline(), devices::contains, profile, readIdleSeconds);
-                            ch.pipeline().addLast("events", new SimpleChannelInboundHandler<TopinDeviceEvent>() {
-                                @Override protected void channelRead0(ChannelHandlerContext ctx, TopinDeviceEvent event) {
-                                    System.out.println(event);
-                                }
-                            });
+                            installPipeline(ch.pipeline(), devices, profile, readIdleSeconds, System.out::println);
                         }
                     }).bind(bind, port).sync().channel();
             Runtime.getRuntime().addShutdownHook(new Thread(server::close, "topin-shutdown"));
@@ -55,5 +52,20 @@ public final class StandaloneTopinServer {
             boss.shutdownGracefully().sync();
             workers.shutdownGracefully().sync();
         }
+    }
+
+    static void installPipeline(ChannelPipeline pipeline, Set<String> devices, TopinReplyProfile profile,
+                                int readIdleSeconds, Consumer<TopinDeviceEvent> events) {
+        TopinPipeline.install(pipeline, devices::contains, profile, readIdleSeconds);
+        pipeline.addLast("events", new SimpleChannelInboundHandler<TopinDeviceEvent>() {
+            @Override protected void channelRead0(ChannelHandlerContext ctx, TopinDeviceEvent event) {
+                // The diagnostic listener has no persistence step to wait for.
+                byte[] acknowledgement = event.acknowledgementAfterIngestion();
+                if (acknowledgement != null) {
+                    ctx.writeAndFlush(Unpooled.wrappedBuffer(acknowledgement));
+                }
+                events.accept(event);
+            }
+        });
     }
 }

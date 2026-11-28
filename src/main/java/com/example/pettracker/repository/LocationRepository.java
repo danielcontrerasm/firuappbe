@@ -18,6 +18,9 @@ public interface LocationRepository extends JpaRepository<Location, Long> {
     @EntityGraph(attributePaths = "pet")
     Optional<Location> findTopByPetIdOrderByTimestampDesc(Long petId);
 
+    @Query("SELECT MAX(l.timestamp) FROM Location l WHERE l.pet.id = :petId AND l.trackerRecorded = true")
+    Optional<LocalDateTime> findLatestTrackerTimestamp(@Param("petId") Long petId);
+
     @Query("""
             SELECT l
             FROM Location l

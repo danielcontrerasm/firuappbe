@@ -172,9 +172,11 @@ class BsjBatteryDecoderTest {
         Pet pet = Pet.builder().id(7L).name("Firulais").terminalId("014166272782").imei("123456789012345").build();
         when(pets.findByTerminalId("014166272782")).thenReturn(Optional.of(pet));
         when(locations.save(any(Location.class))).thenAnswer(call -> call.getArgument(0));
+        // The battery fixture carries a fixed timestamp.
+        Duration fixtureWindow = Duration.ofDays(36_500);
         GpsIngestionService ingestion = new GpsIngestionService(locations, pets, mock(GeofencingService.class),
-                Runnable::run, appTime, Caffeine.newBuilder().build(), Duration.ofDays(1), Duration.ofMinutes(1),
-                false, 100, 1);
+                Runnable::run, Runnable::run, appTime, Caffeine.newBuilder().build(), Duration.ofDays(1),
+                Duration.ofMinutes(1), fixtureWindow, fixtureWindow, false, 100, 1, 30, 500, 4);
         Jt808TimeZones zones = new Jt808TimeZones();
         zones.setTerminalTimeZones(Map.of("014166272782", "UTC"));
         EmbeddedChannel channel = new EmbeddedChannel(new GpsProtocolDetector(
